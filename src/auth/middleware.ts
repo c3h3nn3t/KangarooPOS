@@ -1,8 +1,12 @@
+import bcrypt from 'bcrypt';
 import { supabase } from '../config/database';
+import { db } from '../db';
 import type { ApiRequest, ApiResponse, Middleware } from '../types/api';
-import type { UserRole } from '../types/database';
+import type { Employee, UserRole } from '../types/database';
 import { ForbiddenError, UnauthorizedError } from '../utils/errors';
 import { logger } from '../utils/logger';
+
+const PIN_SALT_ROUNDS = 10;
 
 /**
  * Extract JWT token from Authorization header
@@ -157,23 +161,42 @@ export function requireRole(...allowedRoles: UserRole[]): Middleware {
  */
 export function authenticatePin(): Middleware {
   return async (req: ApiRequest, _res: ApiResponse, next: () => Promise<void>) => {
-    const { pin, employee_id } = req.body as { pin?: string; employee_id?: string };
+    const { pin, employee_id, store_id } = req.body as {
+      pin?: string;
+      employee_id?: string;
+      store_id?: string;
+    };
 
     if (!pin || !employee_id) {
       throw new UnauthorizedError('PIN and employee ID required');
     }
 
-    // TODO: Implement PIN hashing and verification
-    // For now, this is a placeholder
-    // In production, use bcrypt to hash/verify PINs
+    // Try cloud first, fall back to edge for offline support
+    let employee: Employee | null = null;
 
-    const { data: employee, error } = await supabase
-      .from('employees')
-      .select('id, account_id, store_id, name, role, is_active, pin_hash')
-      .eq('id', employee_id)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('id, account_id, store_id, name, role, is_active, pin_hash')
+        .eq('id', employee_id)
+        .single();
 
-    if (error || !employee) {
+      if (!error && data) {
+        employee = data as Employee;
+      }
+    } catch {
+      logger.debug('Cloud auth failed, trying edge database');
+    }
+
+    // Fallback to edge database for offline authentication
+    if (!employee) {
+      const edgeResult = await db.selectOne<Employee>('employees', employee_id);
+      if (edgeResult.data) {
+        employee = edgeResult.data;
+      }
+    }
+
+    if (!employee) {
       throw new UnauthorizedError('Invalid employee ID');
     }
 
@@ -181,19 +204,37 @@ export function authenticatePin(): Middleware {
       throw new ForbiddenError('Employee account is inactive');
     }
 
-    // TODO: Verify PIN hash
-    // const isValid = await bcrypt.compare(pin, employee.pin_hash);
-    // if (!isValid) {
-    //   throw new UnauthorizedError('Invalid PIN');
-    // }
+    if (!employee.pin_hash) {
+      throw new UnauthorizedError('Employee PIN not configured');
+    }
+
+    // Verify PIN hash
+    const isValid = await bcrypt.compare(pin, employee.pin_hash);
+    if (!isValid) {
+      throw new UnauthorizedError('Invalid PIN');
+    }
 
     // Set employee context
     req.userId = employee.id;
     req.accountId = employee.account_id;
     req.userRole = employee.role;
     req.employeeId = employee.id;
-    req.storeId = employee.store_id;
+    req.storeId = store_id || employee.store_id || undefined;
 
     await next();
   };
+}
+
+/**
+ * Hash a PIN for storage
+ */
+export async function hashPin(pin: string): Promise<string> {
+  return bcrypt.hash(pin, PIN_SALT_ROUNDS);
+}
+
+/**
+ * Verify a PIN against a hash
+ */
+export async function verifyPin(pin: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(pin, hash);
 }

@@ -17,12 +17,18 @@
     "db:migrate": "ts-node src/db/migrate.ts",
     "db:seed": "ts-node src/db/seed.ts"
   },
-  "keywords": ["pos", "point-of-sale", "supabase", "typescript"],
+  "keywords": [
+    "pos",
+    "point-of-sale",
+    "supabase",
+    "typescript"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "@supabase/supabase-js": "^2.87.1",
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^17.2.3",
     "pino": "^9.6.0",
@@ -31,6 +37,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/bcrypt": "^6.0.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^24.10.2",
     "@types/uuid": "^10.0.0",

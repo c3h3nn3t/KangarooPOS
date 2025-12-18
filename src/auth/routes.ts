@@ -1,12 +1,14 @@
 import { z } from 'zod';
-import { validateBody } from '../api/middleware/validation';
+import { validateBody, validateParams } from '../api/middleware/validation';
 import { successResponse } from '../api/response';
 import type { Router } from '../api/router';
 import { supabase } from '../config/database';
+import { db } from '../db';
 import type { ApiRequest, ApiResponse } from '../types/api';
-import { ValidationError } from '../utils/errors';
+import type { Employee } from '../types/database';
+import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors';
 import { logger } from '../utils/logger';
-import { authenticate, optionalAuth } from './middleware';
+import { authenticate, authenticatePin, hashPin, optionalAuth, requireRole } from './middleware';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -298,5 +300,207 @@ export function registerAuthRoutes(router: Router): void {
       );
     },
     [authenticate()]
+  );
+
+  // ===========================================================================
+  // PIN AUTHENTICATION (For POS terminals)
+  // ===========================================================================
+
+  const pinLoginSchema = z.object({
+    employee_id: z.string().uuid(),
+    pin: z.string().min(4).max(8),
+    store_id: z.string().uuid().optional()
+  });
+
+  const setPinSchema = z.object({
+    pin: z.string().min(4).max(8).regex(/^\d+$/, 'PIN must contain only digits')
+  });
+
+  /**
+   * POST /api/v1/auth/pin/login
+   * Login with employee PIN (for POS terminals)
+   */
+  router.post(
+    '/api/v1/auth/pin/login',
+    async (req: ApiRequest, res: ApiResponse) => {
+      // authenticatePin middleware handles the validation and sets employee context
+      successResponse(
+        res,
+        {
+          employee: {
+            id: req.employeeId,
+            account_id: req.accountId,
+            role: req.userRole,
+            store_id: req.storeId
+          },
+          // Note: PIN auth doesn't return a JWT token - use for offline POS only
+          // For token-based sessions, use regular login first
+          message: 'PIN authentication successful'
+        },
+        200,
+        { requestId: req.requestId }
+      );
+    },
+    [validateBody(pinLoginSchema), authenticatePin()]
+  );
+
+  /**
+   * POST /api/v1/auth/employees/:id/pin
+   * Set or update employee PIN (requires manager+ role)
+   */
+  router.post(
+    '/api/v1/auth/employees/:id/pin',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+      const employeeId = req.params.id;
+      const { pin } = setPinSchema.parse(req.body);
+
+      // Get the employee
+      const { data: employee, error } = await supabase
+        .from('employees')
+        .select('id, account_id, name, role')
+        .eq('id', employeeId)
+        .single();
+
+      if (error || !employee) {
+        throw new NotFoundError('Employee', employeeId);
+      }
+
+      if (employee.account_id !== accountId) {
+        throw new NotFoundError('Employee', employeeId);
+      }
+
+      // Hash the PIN
+      const pinHash = await hashPin(pin);
+
+      // Update employee with hashed PIN
+      const { error: updateError } = await supabase
+        .from('employees')
+        .update({ pin_hash: pinHash })
+        .eq('id', employeeId);
+
+      if (updateError) {
+        throw new ValidationError(`Failed to set PIN: ${updateError.message}`);
+      }
+
+      // Also update in edge database for offline auth
+      await db.update<Employee>('employees', employeeId, { pin_hash: pinHash });
+
+      logger.info({ employeeId, setBy: req.userId }, 'Employee PIN updated');
+
+      successResponse(
+        res,
+        {
+          message: 'PIN set successfully',
+          employee_id: employeeId
+        },
+        200,
+        { requestId: req.requestId }
+      );
+    },
+    [
+      authenticate(),
+      requireRole('manager'),
+      validateParams(z.object({ id: z.string().uuid() })),
+      validateBody(setPinSchema)
+    ]
+  );
+
+  /**
+   * DELETE /api/v1/auth/employees/:id/pin
+   * Remove employee PIN (requires manager+ role)
+   */
+  router.delete(
+    '/api/v1/auth/employees/:id/pin',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+      const employeeId = req.params.id;
+
+      // Get the employee
+      const { data: employee, error } = await supabase
+        .from('employees')
+        .select('id, account_id')
+        .eq('id', employeeId)
+        .single();
+
+      if (error || !employee) {
+        throw new NotFoundError('Employee', employeeId);
+      }
+
+      if (employee.account_id !== accountId) {
+        throw new NotFoundError('Employee', employeeId);
+      }
+
+      // Remove PIN
+      const { error: updateError } = await supabase
+        .from('employees')
+        .update({ pin_hash: null })
+        .eq('id', employeeId);
+
+      if (updateError) {
+        throw new ValidationError(`Failed to remove PIN: ${updateError.message}`);
+      }
+
+      // Also update in edge database
+      await db.update<Employee>('employees', employeeId, { pin_hash: null });
+
+      logger.info({ employeeId, removedBy: req.userId }, 'Employee PIN removed');
+
+      successResponse(
+        res,
+        {
+          message: 'PIN removed successfully',
+          employee_id: employeeId
+        },
+        200,
+        { requestId: req.requestId }
+      );
+    },
+    [
+      authenticate(),
+      requireRole('manager'),
+      validateParams(z.object({ id: z.string().uuid() }))
+    ]
+  );
+
+  /**
+   * GET /api/v1/auth/employees
+   * List employees for PIN login selection (for POS terminal)
+   */
+  router.get(
+    '/api/v1/auth/employees',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const storeId = req.query?.store_id as string;
+
+      if (!storeId) {
+        throw new ValidationError('store_id query parameter is required');
+      }
+
+      // Get employees for the store (public endpoint for POS login screen)
+      const { data: employees, error } = await supabase
+        .from('employees')
+        .select('id, name, role, store_id')
+        .eq('store_id', storeId)
+        .eq('is_active', true)
+        .not('pin_hash', 'is', null)
+        .order('name');
+
+      if (error) {
+        throw new ValidationError(`Failed to fetch employees: ${error.message}`);
+      }
+
+      successResponse(
+        res,
+        employees.map((e) => ({
+          id: e.id,
+          name: e.name,
+          role: e.role
+          // Note: Don't return pin_hash
+        })),
+        200,
+        { requestId: req.requestId }
+      );
+    },
+    [] // No auth required - this is for POS login screen
   );
 }

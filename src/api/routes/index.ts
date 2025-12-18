@@ -2,7 +2,10 @@ import { registerAuthRoutes } from '../../auth/routes';
 import type { Router } from '../router';
 import { registerCustomerRoutes } from './customers';
 import { registerHealthRoutes } from './health';
-// import { registerPaymentRoutes } from './payments'; // TODO: Add payments routes
+import { registerOrderRoutes } from './orders';
+import { registerPaymentRoutes } from './payments';
+import { registerProductRoutes } from './products';
+import { registerShiftRoutes } from './shifts';
 import { registerV1Routes } from './v1';
 
 export function registerRoutes(router: Router): void {
@@ -15,17 +18,16 @@ export function registerRoutes(router: Router): void {
   // API v1 routes - all routes under /api/v1 prefix
   registerV1Routes(router);
 
-  // Payment routes
-  // registerPaymentRoutes(router); // TODO: Add payments routes
-
-  // Customer routes
+  // Core POS routes
+  registerProductRoutes(router);
+  registerOrderRoutes(router);
+  registerPaymentRoutes(router);
   registerCustomerRoutes(router);
+  registerShiftRoutes(router);
 
   // Future route registrations:
-  // registerProductRoutes(router);
-  // registerOrderRoutes(router);
+  // registerInventoryRoutes(router);
   // registerEmployeeRoutes(router);
-  // registerShiftRoutes(router);
   // registerSyncRoutes(router);
   // registerKdsRoutes(router);
 }
