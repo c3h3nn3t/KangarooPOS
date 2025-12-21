@@ -466,17 +466,31 @@ export function registerAuthRoutes(router: Router): void {
   /**
    * GET /api/v1/auth/employees
    * List employees for PIN login selection (for POS terminal)
+   * Requires authentication to prevent employee enumeration attacks
    */
   router.get(
     '/api/v1/auth/employees',
     async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
       const storeId = req.query?.store_id as string;
 
       if (!storeId) {
         throw new ValidationError('store_id query parameter is required');
       }
 
-      // Get employees for the store (public endpoint for POS login screen)
+      // Verify the store belongs to the authenticated user's account
+      const { data: store, error: storeError } = await supabase
+        .from('stores')
+        .select('id')
+        .eq('id', storeId)
+        .eq('account_id', accountId)
+        .single();
+
+      if (storeError || !store) {
+        throw new ForbiddenError('Access denied to the specified store');
+      }
+
+      // Get employees for the store (only for stores in the user's account)
       const { data: employees, error } = await supabase
         .from('employees')
         .select('id, name, role, store_id')
@@ -501,6 +515,6 @@ export function registerAuthRoutes(router: Router): void {
         { requestId: req.requestId }
       );
     },
-    [] // No auth required - this is for POS login screen
+    [authenticate()]
   );
 }

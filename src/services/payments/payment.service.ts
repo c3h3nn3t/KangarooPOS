@@ -54,6 +54,8 @@ export interface PaymentSearchInput {
   status?: PaymentStatus | PaymentStatus[];
   from_date?: string;
   to_date?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface RefundSearchInput {
@@ -62,6 +64,8 @@ export interface RefundSearchInput {
   status?: RefundStatus | RefundStatus[];
   from_date?: string;
   to_date?: string;
+  limit?: number;
+  offset?: number;
 }
 
 // =============================================================================
@@ -133,7 +137,8 @@ export class PaymentService extends BaseService {
     const result = await this.db.select<Payment>('payments', {
       where,
       orderBy: [{ column: 'created_at', direction: 'desc' as const }],
-      limit: 100
+      ...(input.limit !== undefined && { limit: input.limit }),
+      ...(input.offset !== undefined && { offset: input.offset })
     });
 
     if (result.error) {
@@ -196,7 +201,7 @@ export class PaymentService extends BaseService {
       throw new ValidationError('Payment amount must be greater than 0');
     }
 
-    // Get existing payments
+    // Get existing payments (tips are separate from order settlement, only count amount_cents)
     const existingPayments = await this.getPaymentsForOrder(input.order_id, input.account_id);
     const paidAmount = existingPayments
       .filter((p) => p.status === 'captured')
@@ -212,9 +217,10 @@ export class PaymentService extends BaseService {
       );
     }
 
-    // Update order tip if provided
+    // Update order tip if provided (use setTip to replace, not accumulate)
+    // This prevents double-counting if tip was already added via /orders/:id/tip endpoint
     if (input.tip_cents && input.tip_cents > 0) {
-      await this.orderService.addTip(input.order_id, input.tip_cents, input.account_id);
+      await this.orderService.setTip(input.order_id, input.tip_cents, input.account_id);
     }
 
     // Create the payment
@@ -242,7 +248,9 @@ export class PaymentService extends BaseService {
     }
 
     // Check if order is fully paid and complete it
-    const newPaidAmount = paidAmount + input.amount_cents;
+    // Include tip_cents since the customer pays amount_cents + tip_cents total,
+    // and addTip() increased order.total_cents by tip_cents
+    const newPaidAmount = paidAmount + input.amount_cents + (input.tip_cents || 0);
     const updatedOrder = await this.orderService.getOrderById(input.order_id, input.account_id);
 
     if (newPaidAmount >= updatedOrder.total_cents) {
@@ -334,7 +342,8 @@ export class PaymentService extends BaseService {
     const result = await this.db.select<Refund>('refunds', {
       where,
       orderBy: [{ column: 'created_at', direction: 'desc' as const }],
-      limit: 100
+      ...(input.limit !== undefined && { limit: input.limit }),
+      ...(input.offset !== undefined && { offset: input.offset })
     });
 
     if (result.error) {

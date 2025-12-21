@@ -109,7 +109,8 @@ export function registerOrderRoutes(router: Router): void {
       const accountId = req.accountId!;
       const query = querySchema.parse(req.query || {});
 
-      const orders = await orderService.searchOrders({
+      // Get total count for pagination (without limit)
+      const allOrders = await orderService.searchOrders({
         account_id: accountId,
         store_id: query.store_id,
         employee_id: query.employee_id,
@@ -121,11 +122,22 @@ export function registerOrderRoutes(router: Router): void {
         receipt_number: query.receipt_number
       });
 
-      // Apply pagination manually (searchOrders returns max 100)
-      const start = (query.page - 1) * query.limit;
-      const paginatedOrders = orders.slice(start, start + query.limit);
+      // Get paginated results
+      const orders = await orderService.searchOrders({
+        account_id: accountId,
+        store_id: query.store_id,
+        employee_id: query.employee_id,
+        customer_id: query.customer_id,
+        status: query.status,
+        order_type: query.order_type,
+        from_date: query.from_date,
+        to_date: query.to_date,
+        receipt_number: query.receipt_number,
+        limit: query.limit,
+        offset: (query.page - 1) * query.limit
+      });
 
-      paginatedResponse(res, paginatedOrders, orders.length, query.page, query.limit, {
+      paginatedResponse(res, orders, allOrders.length, query.page, query.limit, {
         requestId: req.requestId
       });
     },

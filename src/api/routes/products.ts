@@ -86,10 +86,9 @@ export function registerProductRoutes(router: Router): void {
       const accountId = req.accountId!;
       const query = querySchema.parse(req.query || {});
 
-      let products;
-
       if (query.search || query.category_id || query.barcode || query.sku) {
-        products = await productService.searchProducts({
+        // Get total count for pagination
+        const allProducts = await productService.searchProducts({
           account_id: accountId,
           query: query.search,
           category_id: query.category_id,
@@ -97,40 +96,44 @@ export function registerProductRoutes(router: Router): void {
           sku: query.sku,
           is_active: query.is_active
         });
-      } else {
-        products = await productService.getProducts(accountId, {
+
+        // Get paginated results
+        const products = await productService.searchProducts({
+          account_id: accountId,
+          query: query.search,
+          category_id: query.category_id,
+          barcode: query.barcode,
+          sku: query.sku,
+          is_active: query.is_active,
           limit: query.limit,
           offset: (query.page - 1) * query.limit
         });
-      }
 
-      paginatedResponse(res, products, products.length, query.page, query.limit, {
-        requestId: req.requestId
-      });
+        paginatedResponse(res, products, allProducts.length, query.page, query.limit, {
+          requestId: req.requestId
+        });
+      } else {
+        // Get paginated products and total count separately for correct pagination
+        const [products, totalCount] = await Promise.all([
+          productService.getProducts(accountId, {
+            limit: query.limit,
+            offset: (query.page - 1) * query.limit
+          }),
+          productService.countProducts(accountId)
+        ]);
+
+        paginatedResponse(res, products, totalCount, query.page, query.limit, {
+          requestId: req.requestId
+        });
+      }
     },
     [authenticate()]
   );
 
   /**
-   * GET /api/v1/products/:id
-   * Get single product with details
-   */
-  router.get(
-    '/api/v1/products/:id',
-    async (req: ApiRequest, res: ApiResponse) => {
-      const accountId = req.accountId!;
-      const productId = req.params.id;
-
-      const result = await productService.getProductWithDetails(productId, accountId);
-
-      successResponse(res, result, 200, { requestId: req.requestId });
-    },
-    [authenticate(), validateParams(uuidParamSchema)]
-  );
-
-  /**
    * GET /api/v1/products/barcode/:barcode
    * Lookup product by barcode
+   * Note: This route must be registered before the generic :id route
    */
   router.get(
     '/api/v1/products/barcode/:barcode',
@@ -148,6 +151,23 @@ export function registerProductRoutes(router: Router): void {
       successResponse(res, product, 200, { requestId: req.requestId });
     },
     [authenticate(), validateParams(z.object({ barcode: z.string().min(1) }))]
+  );
+
+  /**
+   * GET /api/v1/products/:id
+   * Get single product with details
+   */
+  router.get(
+    '/api/v1/products/:id',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+      const productId = req.params.id;
+
+      const result = await productService.getProductWithDetails(productId, accountId);
+
+      successResponse(res, result, 200, { requestId: req.requestId });
+    },
+    [authenticate(), validateParams(uuidParamSchema)]
   );
 
   /**

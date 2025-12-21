@@ -369,7 +369,18 @@ export class ShiftService extends BaseService {
   async getShiftSummary(shiftId: string, accountId: string): Promise<ShiftSummary> {
     const shift = await this.getShiftById(shiftId, accountId);
 
-    // Get payments made during this shift
+    // Get orders associated with this shift
+    const ordersResult = await this.db.select<{ id: string }>('orders', {
+      where: [
+        { column: 'account_id', operator: '=' as const, value: accountId },
+        { column: 'shift_id', operator: '=' as const, value: shiftId }
+      ],
+      columns: ['id']
+    });
+
+    const shiftOrderIds = new Set((ordersResult.data || []).map((o) => o.id));
+
+    // Get payments only for orders in this shift
     const paymentsResult = await this.db.select<Payment>('payments', {
       where: [
         { column: 'account_id', operator: '=' as const, value: accountId },
@@ -377,16 +388,12 @@ export class ShiftService extends BaseService {
       ]
     });
 
-    // Filter payments by shift's time range
-    const shiftStart = new Date(shift.opened_at).getTime();
-    const shiftEnd = shift.closed_at ? new Date(shift.closed_at).getTime() : Date.now();
+    // Filter payments to only those belonging to shift's orders
+    const shiftPayments = (paymentsResult.data || []).filter((p) =>
+      shiftOrderIds.has(p.order_id)
+    );
 
-    const shiftPayments = (paymentsResult.data || []).filter((p) => {
-      const paymentTime = new Date(p.processed_at || p.created_at).getTime();
-      return paymentTime >= shiftStart && paymentTime <= shiftEnd;
-    });
-
-    // Get refunds during shift
+    // Get refunds only for orders in this shift
     const refundsResult = await this.db.select<Refund>('refunds', {
       where: [
         { column: 'account_id', operator: '=' as const, value: accountId },
@@ -394,10 +401,10 @@ export class ShiftService extends BaseService {
       ]
     });
 
-    const shiftRefunds = (refundsResult.data || []).filter((r) => {
-      const refundTime = new Date(r.processed_at || r.created_at).getTime();
-      return refundTime >= shiftStart && refundTime <= shiftEnd;
-    });
+    // Filter refunds to only those belonging to shift's orders
+    const shiftRefunds = (refundsResult.data || []).filter((r) =>
+      shiftOrderIds.has(r.order_id)
+    );
 
     // Calculate totals by payment type
     // In production, you'd join with payment_types table
@@ -407,12 +414,14 @@ export class ShiftService extends BaseService {
 
     for (const payment of shiftPayments) {
       // Determine payment type (simplified - in production use payment_type_id)
+      // Include tip_cents in payment totals since tips are part of the transaction
+      const paymentTotal = payment.amount_cents + (payment.tip_cents || 0);
       if (payment.card_brand) {
-        totalCardPayments += payment.amount_cents;
+        totalCardPayments += paymentTotal;
       } else if (payment.gateway_transaction_id) {
-        totalOtherPayments += payment.amount_cents;
+        totalOtherPayments += paymentTotal;
       } else {
-        totalCashPayments += payment.amount_cents;
+        totalCashPayments += paymentTotal;
       }
     }
 

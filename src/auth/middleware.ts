@@ -214,12 +214,43 @@ export function authenticatePin(): Middleware {
       throw new UnauthorizedError('Invalid PIN');
     }
 
+    // Validate store_id belongs to the employee's account if provided
+    let validatedStoreId = employee.store_id;
+    if (store_id && store_id !== employee.store_id) {
+      // Verify the store belongs to the same account
+      let storeValid = false;
+      try {
+        const { data: store } = await supabase
+          .from('stores')
+          .select('id, account_id')
+          .eq('id', store_id)
+          .eq('account_id', employee.account_id)
+          .single();
+
+        if (store) {
+          storeValid = true;
+          validatedStoreId = store_id;
+        }
+      } catch {
+        // Fallback to edge database
+        const edgeResult = await db.selectOne<{ id: string; account_id: string }>('stores', store_id);
+        if (edgeResult.data && edgeResult.data.account_id === employee.account_id) {
+          storeValid = true;
+          validatedStoreId = store_id;
+        }
+      }
+
+      if (!storeValid) {
+        throw new ForbiddenError('Access denied to the specified store');
+      }
+    }
+
     // Set employee context
     req.userId = employee.id;
     req.accountId = employee.account_id;
     req.userRole = employee.role;
     req.employeeId = employee.id;
-    req.storeId = store_id || employee.store_id || undefined;
+    req.storeId = validatedStoreId || undefined;
 
     await next();
   };

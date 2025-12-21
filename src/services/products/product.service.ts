@@ -66,6 +66,8 @@ export interface ProductSearchInput {
   barcode?: string;
   sku?: string;
   is_active?: boolean;
+  limit?: number;
+  offset?: number;
 }
 
 // =============================================================================
@@ -98,6 +100,24 @@ export class ProductService extends BaseService {
     }
 
     return result.data;
+  }
+
+  /**
+   * Count total products for an account (for pagination)
+   */
+  async countProducts(accountId: string): Promise<number> {
+    const result = await this.db.select<Product>('products', {
+      where: [
+        { column: 'account_id', operator: '=' as const, value: accountId },
+        { column: 'is_active', operator: '=' as const, value: true }
+      ]
+    });
+
+    if (result.error) {
+      throw new Error(`Failed to count products: ${result.error}`);
+    }
+
+    return result.data.length;
   }
 
   /**
@@ -191,7 +211,8 @@ export class ProductService extends BaseService {
     const result = await this.db.select<Product>('products', {
       where,
       orderBy: [{ column: 'name', direction: 'asc' as const }],
-      limit: 100
+      ...(input.limit !== undefined && { limit: input.limit }),
+      ...(input.offset !== undefined && { offset: input.offset })
     });
 
     if (result.error) {
@@ -264,17 +285,17 @@ export class ProductService extends BaseService {
     // Verify product exists and belongs to account
     await this.getProductById(input.id, accountId);
 
-    // Validate unique SKU if changing
-    if (input.sku !== undefined) {
-      const existing = await this.getProductBySku(input.sku!, accountId);
+    // Validate unique SKU if changing (skip if clearing to null)
+    if (input.sku !== undefined && input.sku !== null) {
+      const existing = await this.getProductBySku(input.sku, accountId);
       if (existing && existing.id !== input.id) {
         throw new ValidationError('Product with this SKU already exists');
       }
     }
 
-    // Validate unique barcode if changing
-    if (input.barcode !== undefined) {
-      const existing = await this.getProductByBarcode(input.barcode!, accountId);
+    // Validate unique barcode if changing (skip if clearing to null)
+    if (input.barcode !== undefined && input.barcode !== null) {
+      const existing = await this.getProductByBarcode(input.barcode, accountId);
       if (existing && existing.id !== input.id) {
         throw new ValidationError('Product with this barcode already exists');
       }

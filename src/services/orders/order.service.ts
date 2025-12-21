@@ -75,6 +75,8 @@ export interface OrderSearchInput {
   from_date?: string;
   to_date?: string;
   receipt_number?: string;
+  limit?: number;
+  offset?: number;
 }
 
 // =============================================================================
@@ -162,7 +164,8 @@ export class OrderService extends BaseService {
     const result = await this.db.select<Order>('orders', {
       where,
       orderBy: [{ column: 'created_at', direction: 'desc' as const }],
-      limit: 100
+      ...(input.limit !== undefined && { limit: input.limit }),
+      ...(input.offset !== undefined && { offset: input.offset })
     });
 
     if (result.error) {
@@ -462,11 +465,15 @@ export class OrderService extends BaseService {
 
     for (const discount of discountBreakdown) {
       if (discount.applied_to === 'order') {
+        // Recalculate order-level percent discounts based on current subtotal
         if (discount.type === 'percent') {
           discountCents += Math.round(subtotal * (discount.value / 100));
         } else {
           discountCents += discount.amount_cents;
         }
+      } else if (discount.applied_to === 'item') {
+        // Item discounts use pre-calculated amount_cents from applyDiscount
+        discountCents += discount.amount_cents;
       }
     }
 
@@ -564,9 +571,35 @@ export class OrderService extends BaseService {
   }
 
   /**
-   * Add tip to order
+   * Add tip to order (accumulates with existing tips)
    */
   async addTip(orderId: string, tipCents: number, accountId: string): Promise<Order> {
+    const order = await this.getOrderById(orderId, accountId);
+
+    if (tipCents < 0) {
+      throw new ValidationError('Tip cannot be negative');
+    }
+
+    const updatedTipCents = order.tip_cents + tipCents;
+    const newTotal = order.subtotal_cents - order.discount_cents + order.tax_cents + updatedTipCents;
+
+    const result = await this.db.update<Order>('orders', orderId, {
+      tip_cents: updatedTipCents,
+      total_cents: newTotal
+    });
+
+    if (result.error || !result.data) {
+      throw new Error(`Failed to add tip: ${result.error || 'Unknown error'}`);
+    }
+
+    return result.data;
+  }
+
+  /**
+   * Set tip on order (replaces any existing tip)
+   * Used during payment processing to avoid double-counting tips
+   */
+  async setTip(orderId: string, tipCents: number, accountId: string): Promise<Order> {
     const order = await this.getOrderById(orderId, accountId);
 
     if (tipCents < 0) {
@@ -581,7 +614,7 @@ export class OrderService extends BaseService {
     });
 
     if (result.error || !result.data) {
-      throw new Error(`Failed to add tip: ${result.error || 'Unknown error'}`);
+      throw new Error(`Failed to set tip: ${result.error || 'Unknown error'}`);
     }
 
     return result.data;
@@ -627,19 +660,23 @@ export class OrderService extends BaseService {
       throw new ConflictError(`Cannot send to kitchen order with status: ${order.status}`);
     }
 
-    // Update order status
+    // Update all items to preparing status first to ensure consistency
+    const items = await this.getOrderItems(orderId);
+    const kitchenSentAt = nowISO();
+    for (const item of items) {
+      const itemResult = await this.db.update<OrderItem>('order_items', item.id, {
+        kitchen_status: 'preparing',
+        kitchen_sent_at: kitchenSentAt
+      });
+      if (itemResult.error) {
+        throw new Error(`Failed to update item ${item.id} for kitchen: ${itemResult.error}`);
+      }
+    }
+
+    // Update order status only after all items are updated
     const result = await this.db.update<Order>('orders', orderId, {
       status: 'preparing'
     });
-
-    // Update all items to preparing status
-    const items = await this.getOrderItems(orderId);
-    for (const item of items) {
-      await this.db.update<OrderItem>('order_items', item.id, {
-        kitchen_status: 'preparing',
-        kitchen_sent_at: nowISO()
-      });
-    }
 
     if (result.error || !result.data) {
       throw new Error(`Failed to send to kitchen: ${result.error || 'Unknown error'}`);
@@ -690,19 +727,23 @@ export class OrderService extends BaseService {
     // Generate receipt number if not provided
     const finalReceiptNumber = receiptNumber || this.generateReceiptNumber();
 
+    // Update all items to served first to ensure consistency
+    const items = await this.getOrderItems(orderId);
+    for (const item of items) {
+      const itemResult = await this.db.update<OrderItem>('order_items', item.id, {
+        kitchen_status: 'served'
+      });
+      if (itemResult.error) {
+        throw new Error(`Failed to update item ${item.id} to served: ${itemResult.error}`);
+      }
+    }
+
+    // Update order status only after all items are updated
     const result = await this.db.update<Order>('orders', orderId, {
       status: 'completed',
       receipt_number: finalReceiptNumber,
       completed_at: nowISO()
     });
-
-    // Update all items to served
-    const items = await this.getOrderItems(orderId);
-    for (const item of items) {
-      await this.db.update<OrderItem>('order_items', item.id, {
-        kitchen_status: 'served'
-      });
-    }
 
     if (result.error || !result.data) {
       throw new Error(`Failed to complete order: ${result.error || 'Unknown error'}`);
@@ -721,19 +762,23 @@ export class OrderService extends BaseService {
       throw new ConflictError(`Cannot cancel order with status: ${order.status}`);
     }
 
+    // Cancel kitchen items first to ensure consistency
+    const items = await this.getOrderItems(orderId);
+    for (const item of items) {
+      const itemResult = await this.db.update<OrderItem>('order_items', item.id, {
+        kitchen_status: 'cancelled'
+      });
+      if (itemResult.error) {
+        throw new Error(`Failed to cancel item ${item.id}: ${itemResult.error}`);
+      }
+    }
+
+    // Update order status only after all items are cancelled
     const result = await this.db.update<Order>('orders', orderId, {
       status: 'cancelled',
       cancelled_at: nowISO(),
       notes: reason ? `${order.notes || ''}\nCancellation reason: ${reason}`.trim() : order.notes
     });
-
-    // Cancel kitchen items
-    const items = await this.getOrderItems(orderId);
-    for (const item of items) {
-      await this.db.update<OrderItem>('order_items', item.id, {
-        kitchen_status: 'cancelled'
-      });
-    }
 
     if (result.error || !result.data) {
       throw new Error(`Failed to cancel order: ${result.error || 'Unknown error'}`);
