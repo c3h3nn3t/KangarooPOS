@@ -1,0 +1,342 @@
+# KangarooPOS - Cursor Rules for Codebase Integrity
+
+## Project Context
+KangarooPOS is an offline-first Point of Sale system with hybrid cloud/edge database architecture.
+- **Stack**: Node.js 20 + TypeScript 5.9, Supabase (PostgreSQL), SQLite (better-sqlite3)
+- **Architecture**: Hybrid Database Adapter Pattern, Service Layer, Custom Router
+- **Code Quality**: Biome (linting/formatting), Vitest (testing), Pino (logging), Zod (validation)
+
+---
+
+## Core Principles
+
+### 1. Architecture Integrity
+- **ALWAYS** use the hybrid adapter (`db` from `@/db`) - NEVER directly import `cloudDb` or `edgeDb` in services/routes
+- **ALWAYS** extend `BaseService` for all service classes
+- **ALWAYS** use the custom router pattern - no Express/Hono imports
+- **NEVER** bypass the service layer - routes should only call services, never database directly
+- **NEVER** mix database adapters - one service = one adapter instance
+
+### 2. Type Safety
+- **ALWAYS** use TypeScript strict mode patterns
+- **ALWAYS** define explicit types for service inputs/outputs (use `interface`, not `type` for public APIs)
+- **ALWAYS** validate external inputs with Zod schemas in routes
+- **NEVER** use `any` - use `unknown` + type guards if needed
+- **ALWAYS** use `as const` for literal types in schemas
+
+### 3. Error Handling
+- **ALWAYS** use custom error classes from `@/utils/errors`
+- **ALWAYS** throw errors, never return error objects (except database adapter results)
+- **ALWAYS** include context in error messages (resource name, ID, operation)
+- **NEVER** throw raw strings or Error instances - use AppError subclasses
+- **ALWAYS** handle database errors and convert to domain errors in services
+
+### 4. Database Patterns
+- **ALWAYS** use `db` (hybrid adapter) in services - it handles online/offline automatically
+- **ALWAYS** check `result.error` before using `result.data` from database operations
+- **ALWAYS** use database-level pagination (limit/offset in SelectOptions) - NEVER fetch all and paginate in memory
+- **ALWAYS** use transactions for multi-step operations (orders, payments, inventory transfers)
+- **NEVER** assume transaction support in cloud adapter - it's simulated, not ACID
+- **ALWAYS** handle offline scenarios - check `db.isOnline` when needed for user feedback
+
+### 5. Service Layer Patterns
+- **ALWAYS** extend `BaseService` and use `this.db` (never import db directly)
+- **ALWAYS** extract account_id/user_id from request in route handlers, pass to services
+- **ALWAYS** return domain objects, never raw database results
+- **ALWAYS** validate business rules in services, not routes
+- **ALWAYS** use descriptive method names: `getInventory`, `createOrder`, `adjustStock`
+- **NEVER** expose database adapter types in service public APIs
+
+### 6. Route Patterns
+- **ALWAYS** use middleware array: `[authenticate(), requireRole(...), validateBody(schema)]`
+- **ALWAYS** extract `accountId` from `req.accountId!` (set by auth middleware)
+- **ALWAYS** use `successResponse()` or `paginatedResponse()` from `@/api/response`
+- **ALWAYS** validate inputs with Zod schemas before service calls
+- **ALWAYS** handle errors by throwing - router will catch and format
+- **NEVER** put business logic in route handlers - delegate to services
+
+### 7. Sync & Offline Patterns
+- **ALWAYS** use hybrid adapter - it automatically queues writes for sync when offline
+- **ALWAYS** check `db.isOnline` status for user-facing messages
+- **ALWAYS** use sync service for manual sync operations
+- **ALWAYS** handle sync conflicts with proper resolution strategies
+- **NEVER** write to cloud-only tables when offline (products, categories, etc.)
+
+### 8. Validation & Security
+- **ALWAYS** validate all external inputs with Zod schemas
+- **ALWAYS** use `validateBody`, `validateQuery`, `validateParams` middleware
+- **ALWAYS** check account_id isolation - users can only access their account's data
+- **ALWAYS** use RBAC middleware (`requireRole`) for protected routes
+- **ALWAYS** use `authenticate()` or `optionalAuth()` middleware
+- **NEVER** trust client input - validate everything
+
+### 9. Logging & Observability
+- **ALWAYS** use structured logging with `logger` from `@/utils/logger`
+- **ALWAYS** include context: `logger.info({ accountId, orderId }, 'Order created')`
+- **ALWAYS** log errors with full context: `logger.error({ error, requestId }, 'Operation failed')`
+- **ALWAYS** use appropriate log levels: `error`, `warn`, `info`, `debug`
+- **NEVER** log sensitive data (passwords, tokens, full request bodies)
+
+### 10. Testing Requirements
+- **ALWAYS** write tests for new services (unit tests)
+- **ALWAYS** write tests for critical flows (sync, transactions, auth)
+- **ALWAYS** use Vitest - test files: `*.test.ts` or `*.spec.ts`
+- **ALWAYS** test error cases, not just happy paths
+- **ALWAYS** mock database adapters in unit tests
+- **NEVER** commit code without tests for new business logic
+
+### 11. Performance
+- **ALWAYS** use database-level pagination (limit/offset in SelectOptions)
+- **ALWAYS** use indexes for frequently queried columns (account_id, store_id, etc.)
+- **ALWAYS** batch operations when possible (insertMany, bulk updates)
+- **ALWAYS** avoid N+1 queries - use joins or batch selects
+- **NEVER** fetch all records and filter in memory
+- **ALWAYS** consider caching for frequently accessed, rarely changed data
+
+### 12. Code Style
+- **ALWAYS** follow Biome configuration (single quotes, semicolons, 2-space indent)
+- **ALWAYS** use `export` for public APIs, avoid default exports
+- **ALWAYS** organize imports: external → internal, grouped by type
+- **ALWAYS** use JSDoc comments for public service methods
+- **ALWAYS** use descriptive variable names - avoid abbreviations
+- **NEVER** use `// @ts-ignore` or `// @ts-expect-error` without explanation
+
+### 13. File Structure
+```
+src/
+  api/
+    middleware/     # Request middleware (auth, validation, rate-limit)
+    routes/         # Route handlers (thin, delegate to services)
+    response.ts     # Response helpers
+    router.ts       # Custom router
+  auth/             # Authentication logic
+  config/           # Configuration (env, database clients)
+  db/               # Database adapters (cloud, edge, hybrid)
+  services/         # Business logic (one folder per domain)
+    {domain}/
+      {domain}.service.ts
+      index.ts
+  types/            # TypeScript types
+  utils/            # Utilities (logger, errors, datetime, etc.)
+```
+
+### 14. Naming Conventions
+- **Services**: `{Domain}Service` (e.g., `InventoryService`, `OrderService`)
+- **Routes**: `register{Domain}Routes` (e.g., `registerInventoryRoutes`)
+- **Interfaces**: PascalCase (e.g., `GetInventoryInput`, `CreateOrderInput`)
+- **Files**: kebab-case (e.g., `inventory.service.ts`, `order.service.ts`)
+- **Constants**: UPPER_SNAKE_CASE (e.g., `CLOUD_ONLY_WRITE_TABLES`)
+- **Database tables**: snake_case (e.g., `order_items`, `sync_journal`)
+
+### 15. Database Schema Patterns
+- **ALWAYS** use UUID primary keys (`id UUID PRIMARY KEY`)
+- **ALWAYS** include `account_id` for multi-tenant tables
+- **ALWAYS** include `created_at` and `updated_at` timestamps
+- **ALWAYS** use `TIMESTAMPTZ` for timestamps
+- **ALWAYS** include `is_active` boolean for soft deletes
+- **ALWAYS** use foreign keys with appropriate CASCADE rules
+
+### 16. Transaction Patterns
+- **ALWAYS** use transactions for multi-step operations
+- **ALWAYS** handle transaction errors and rollback
+- **ALWAYS** be aware: cloud adapter transactions are simulated (not ACID)
+- **ALWAYS** test transaction rollback scenarios
+- **NEVER** nest transactions - use single transaction for entire operation
+
+### 17. Sync Patterns
+- **ALWAYS** let hybrid adapter handle sync queueing automatically
+- **ALWAYS** use sync service for manual sync operations
+- **ALWAYS** handle sync conflicts with proper resolution
+- **ALWAYS** test offline → online sync scenarios
+- **NEVER** manually manipulate sync_journal table
+
+### 18. Documentation
+- **ALWAYS** add JSDoc comments for public service methods
+- **ALWAYS** document complex business logic
+- **ALWAYS** document API endpoints (method, path, auth, params)
+- **ALWAYS** update README for new features
+- **NEVER** leave TODO comments without issue references
+
+### 19. Dependencies
+- **ALWAYS** use existing dependencies - avoid adding new ones without justification
+- **ALWAYS** check for security vulnerabilities: `npm audit`
+- **ALWAYS** pin dependency versions in package.json
+- **NEVER** add heavy frameworks (Express, NestJS) - use custom router
+- **NEVER** add ORMs (Prisma, TypeORM) - use adapter pattern
+
+### 20. Migration & Deployment
+- **ALWAYS** use Supabase migrations for schema changes
+- **ALWAYS** update edge schema when cloud schema changes
+- **ALWAYS** test migrations on staging first
+- **ALWAYS** include rollback scripts for critical migrations
+- **NEVER** modify production schema without migration
+
+---
+
+## Code Examples
+
+### ✅ CORRECT: Service Pattern
+```typescript
+// src/services/inventory/inventory.service.ts
+import { db } from '../../db';
+import { BaseService } from '../base.service';
+import { NotFoundError, ValidationError } from '../../utils/errors';
+
+export interface GetInventoryInput {
+  account_id: string;
+  store_id?: string;
+}
+
+export class InventoryService extends BaseService {
+  /**
+   * Get inventory records for an account
+   */
+  async getInventory(input: GetInventoryInput): Promise<Inventory[]> {
+    const where = [{ column: 'account_id', operator: '=' as const, value: input.account_id }];
+    if (input.store_id) {
+      where.push({ column: 'store_id', operator: '=' as const, value: input.store_id });
+    }
+
+    const result = await this.db.select<Inventory>('inventory', { where });
+    if (result.error) {
+      throw new Error(`Failed to fetch inventory: ${result.error}`);
+    }
+    return result.data;
+  }
+}
+```
+
+### ✅ CORRECT: Route Pattern
+```typescript
+// src/api/routes/inventory.ts
+import { authenticate, requireRole } from '../../auth/middleware';
+import { InventoryService } from '../../services/inventory/inventory.service';
+import { validateQuery } from '../middleware/validation';
+import { paginatedResponse } from '../response';
+import { z } from 'zod';
+
+const querySchema = z.object({
+  store_id: z.string().uuid().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50)
+});
+
+export function registerInventoryRoutes(router: Router): void {
+  router.get(
+    '/api/v1/inventory',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+      const query = querySchema.parse(req.query || {});
+
+      const result = await inventoryService.getInventory(
+        { account_id: accountId, store_id: query.store_id },
+        { limit: query.limit, offset: (query.page - 1) * query.limit }
+      );
+
+      paginatedResponse(res, result.data, result.count || 0, query.page, query.limit, {
+        requestId: req.requestId
+      });
+    },
+    [authenticate(), requireRole('owner', 'admin', 'manager'), validateQuery(querySchema)]
+  );
+}
+```
+
+### ❌ WRONG: Direct Database Access in Route
+```typescript
+// DON'T DO THIS
+router.get('/api/v1/inventory', async (req, res) => {
+  const result = await db.select('inventory', { where: [...] }); // ❌ Business logic in route
+  res.json(result);
+});
+```
+
+### ❌ WRONG: Using Cloud/Edge Adapters Directly
+```typescript
+// DON'T DO THIS
+import { cloudDb } from '@/db/cloud-adapter'; // ❌ Bypass hybrid adapter
+const result = await cloudDb.select('inventory', {});
+```
+
+### ❌ WRONG: Memory Pagination
+```typescript
+// DON'T DO THIS
+const all = await service.getInventory({ account_id }); // ❌ Fetches all
+const paginated = all.slice(start, start + limit); // ❌ Memory pagination
+```
+
+---
+
+## Checklist for New Features
+
+Before implementing any feature, ensure:
+
+- [ ] Service extends `BaseService` and uses `this.db`
+- [ ] Route uses middleware array with auth/validation
+- [ ] Input validation with Zod schemas
+- [ ] Error handling with custom error classes
+- [ ] Database-level pagination (if listing data)
+- [ ] Account isolation enforced
+- [ ] RBAC middleware applied
+- [ ] Structured logging with context
+- [ ] Unit tests written
+- [ ] Offline scenario considered (if applicable)
+- [ ] JSDoc comments for public methods
+- [ ] No direct database access in routes
+- [ ] No memory pagination
+- [ ] No `any` types
+- [ ] Biome formatting applied
+
+---
+
+## Enforcement
+
+When suggesting code changes:
+1. **ALWAYS** follow these rules strictly
+2. **ALWAYS** point out violations in code review
+3. **ALWAYS** suggest fixes that align with these patterns
+4. **ALWAYS** maintain consistency with existing codebase
+5. **NEVER** suggest breaking changes to architecture patterns
+6. **NEVER** suggest adding heavy dependencies
+7. **NEVER** suggest shortcuts that bypass service layer
+8. **NEVER** suggest memory pagination
+9. **ALWAYS** prioritize code integrity over speed
+10. **ALWAYS** ensure offline-first compatibility
+
+---
+
+## Quick Reference
+
+| Pattern | Rule |
+|---------|------|
+| Database Access | Always use `db` (hybrid adapter) via `this.db` in services |
+| Service Class | Always extend `BaseService` |
+| Route Handler | Always use middleware array, delegate to services |
+| Error Handling | Always throw custom error classes |
+| Validation | Always use Zod schemas with middleware |
+| Pagination | Always use database-level (limit/offset) |
+| Logging | Always use structured logging with context |
+| Testing | Always write tests for new services |
+| Types | Always explicit types, never `any` |
+| Offline | Always consider offline scenarios |
+
+---
+
+**Last Updated**: 2025-01-XX
+**Version**: 1.0.0
+**Maintainer**: Development Team
+```
+
+Bu `.cursorrules` dosyası:
+
+1. Mimari bütünlük: Hybrid adapter, service layer, custom router
+2. Tip güvenliği: Strict TypeScript, Zod validation
+3. Hata yönetimi: Custom error classes
+4. Veritabanı: Hybrid adapter kullanımı, transaction patterns
+5. Performans: Database-level pagination, batching
+6. Güvenlik: Account isolation, RBAC, input validation
+7. Test: Vitest, unit/integration test requirements
+8. Kod stili: Biome conventions, naming patterns
+9. Dokümantasyon: JSDoc, API documentation
+
+Dosyayı proje root'una ekleyin. Cursor, bu kurallara göre kod önerileri yapacak ve tutarlılığı koruyacaktır.
