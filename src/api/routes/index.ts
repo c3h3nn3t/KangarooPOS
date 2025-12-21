@@ -1,11 +1,16 @@
 import { registerAuthRoutes } from '../../auth/routes';
 import type { Router } from '../router';
 import { registerCustomerRoutes } from './customers';
+import { registerEmployeeRoutes } from './employees';
 import { registerHealthRoutes } from './health';
+import { registerInventoryRoutes } from './inventory';
+import { registerKdsRoutes } from './kds';
 import { registerOrderRoutes } from './orders';
 import { registerPaymentRoutes } from './payments';
 import { registerProductRoutes } from './products';
+import { registerReportRoutes } from './reports';
 import { registerShiftRoutes } from './shifts';
+import { registerSyncRoutes } from './sync';
 import { registerV1Routes } from './v1';
 
 export function registerRoutes(router: Router): void {
@@ -25,9 +30,18 @@ export function registerRoutes(router: Router): void {
   registerCustomerRoutes(router);
   registerShiftRoutes(router);
 
-  // Future route registrations:
-  // registerInventoryRoutes(router);
-  // registerEmployeeRoutes(router);
-  // registerSyncRoutes(router);
-  // registerKdsRoutes(router);
+  // Employee management
+  registerEmployeeRoutes(router);
+
+  // Inventory management
+  registerInventoryRoutes(router);
+
+  // Sync management (offline/online)
+  registerSyncRoutes(router);
+
+  // Kitchen Display System
+  registerKdsRoutes(router);
+
+  // Reports and analytics
+  registerReportRoutes(router);
 }

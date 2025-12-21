@@ -9,9 +9,8 @@ export * from './products';
 export * from './orders';
 export * from './payments';
 export * from './shifts';
-
-// Future service exports:
-// export * from './inventory';
-// export * from './employees';
-// export * from './sync';
-// export * from './kds';
+export * from './employees';
+export * from './inventory';
+export * from './sync';
+export * from './kds';
+export * from './reports';
