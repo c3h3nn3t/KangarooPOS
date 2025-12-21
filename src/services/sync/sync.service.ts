@@ -561,7 +561,9 @@ export class SyncService extends BaseService {
     by_table: Record<string, number>;
     by_operation: Record<SyncOperation, number>;
   }> {
-    const allEntries = await this.getSyncJournal(accountId, { limit: 10000 });
+    // Get all entries for accurate statistics - pass a very high limit to ensure we get all records
+    // Using 100000 as a reasonable upper bound for sync journal entries
+    const allEntries = await this.getSyncJournal(accountId, { limit: 100000 });
 
     const byStatus: Record<string, number> = {};
     const byTable: Record<string, number> = {};

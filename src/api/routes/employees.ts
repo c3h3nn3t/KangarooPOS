@@ -83,6 +83,23 @@ export function registerEmployeeRoutes(router: Router): void {
   );
 
   /**
+   * GET /api/v1/employees/without-pin
+   * Get employees who haven't configured their PIN
+   * NOTE: This static route must be registered before /api/v1/employees/:id
+   */
+  router.get(
+    '/api/v1/employees/without-pin',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+
+      const employees = await employeeService.getEmployeesWithoutPin(accountId);
+
+      successResponse(res, employees, 200, { requestId: req.requestId });
+    },
+    [authenticate(), requireRole('owner', 'admin', 'manager')]
+  );
+
+  /**
    * GET /api/v1/employees/:id
    * Get a single employee by ID
    */
@@ -271,7 +288,11 @@ export function registerEmployeeRoutes(router: Router): void {
 
       successResponse(res, result, 200, { requestId: req.requestId });
     },
-    [validateParams(z.object({ id: z.string().uuid() })), validateBody(verifyPinSchema)]
+    [
+      authenticate(),
+      validateParams(z.object({ id: z.string().uuid() })),
+      validateBody(verifyPinSchema)
+    ]
   );
 
   /**
@@ -322,22 +343,6 @@ export function registerEmployeeRoutes(router: Router): void {
       validateParams(z.object({ id: z.string().uuid() })),
       validateBody(z.object({ store_id: z.string().uuid().nullable() }))
     ]
-  );
-
-  /**
-   * GET /api/v1/employees/without-pin
-   * Get employees who haven't configured their PIN
-   */
-  router.get(
-    '/api/v1/employees/without-pin',
-    async (req: ApiRequest, res: ApiResponse) => {
-      const accountId = req.accountId!;
-
-      const employees = await employeeService.getEmployeesWithoutPin(accountId);
-
-      successResponse(res, employees, 200, { requestId: req.requestId });
-    },
-    [authenticate(), requireRole('owner', 'admin', 'manager')]
   );
 
   /**

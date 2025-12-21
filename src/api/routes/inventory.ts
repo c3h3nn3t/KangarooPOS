@@ -98,24 +98,78 @@ export function registerInventoryRoutes(router: Router): void {
       const accountId = req.accountId!;
       const query = querySchema.parse(req.query || {});
 
-      const inventory = await inventoryService.getInventory(
-        {
-          account_id: accountId,
-          store_id: query.store_id,
-          product_id: query.product_id,
-          low_stock_only: query.low_stock_only
-        },
-        {
-          limit: query.limit,
-          offset: (query.page - 1) * query.limit
-        }
-      );
+      // Get all matching records first for accurate total count
+      const allInventory = await inventoryService.getInventory({
+        account_id: accountId,
+        store_id: query.store_id,
+        product_id: query.product_id,
+        low_stock_only: query.low_stock_only
+      });
 
-      paginatedResponse(res, inventory, inventory.length, query.page, query.limit, {
+      const start = (query.page - 1) * query.limit;
+      const paginatedInventory = allInventory.slice(start, start + query.limit);
+
+      paginatedResponse(res, paginatedInventory, allInventory.length, query.page, query.limit, {
         requestId: req.requestId
       });
     },
     [authenticate(), requireRole('owner', 'admin', 'manager'), validateQuery(querySchema)]
+  );
+
+  /**
+   * GET /api/v1/inventory/low-stock
+   * Get low stock items
+   * NOTE: This static route must be registered before /api/v1/inventory/:id
+   */
+  router.get(
+    '/api/v1/inventory/low-stock',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+      const { store_id } = z
+        .object({ store_id: z.string().uuid().optional() })
+        .parse(req.query || {});
+
+      const lowStockItems = await inventoryService.getLowStockItems(accountId, store_id);
+
+      successResponse(res, lowStockItems, 200, { requestId: req.requestId });
+    },
+    [
+      authenticate(),
+      requireRole('owner', 'admin', 'manager'),
+      validateQuery(z.object({ store_id: z.string().uuid().optional() }))
+    ]
+  );
+
+  /**
+   * GET /api/v1/inventory/transactions
+   * Get all inventory transactions for the account
+   * NOTE: This static route must be registered before /api/v1/inventory/:id
+   */
+  router.get(
+    '/api/v1/inventory/transactions',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+      const query = transactionQuerySchema.parse(req.query || {});
+
+      // Get all matching transactions for accurate total count
+      const allTransactions = await inventoryService.getAccountTransactions(accountId, {
+        transaction_type: query.transaction_type as InventoryTransactionType | undefined,
+        start_date: query.start_date,
+        end_date: query.end_date
+      });
+
+      const start = (query.page - 1) * query.limit;
+      const paginatedTransactions = allTransactions.slice(start, start + query.limit);
+
+      paginatedResponse(res, paginatedTransactions, allTransactions.length, query.page, query.limit, {
+        requestId: req.requestId
+      });
+    },
+    [
+      authenticate(),
+      requireRole('owner', 'admin', 'manager'),
+      validateQuery(transactionQuerySchema)
+    ]
   );
 
   /**
@@ -276,29 +330,6 @@ export function registerInventoryRoutes(router: Router): void {
   );
 
   /**
-   * GET /api/v1/inventory/low-stock
-   * Get low stock items
-   */
-  router.get(
-    '/api/v1/inventory/low-stock',
-    async (req: ApiRequest, res: ApiResponse) => {
-      const accountId = req.accountId!;
-      const { store_id } = z
-        .object({ store_id: z.string().uuid().optional() })
-        .parse(req.query || {});
-
-      const lowStockItems = await inventoryService.getLowStockItems(accountId, store_id);
-
-      successResponse(res, lowStockItems, 200, { requestId: req.requestId });
-    },
-    [
-      authenticate(),
-      requireRole('owner', 'admin', 'manager'),
-      validateQuery(z.object({ store_id: z.string().uuid().optional() }))
-    ]
-  );
-
-  /**
    * GET /api/v1/inventory/:id/transactions
    * Get transactions for an inventory record
    */
@@ -309,16 +340,23 @@ export function registerInventoryRoutes(router: Router): void {
       const inventoryId = req.params.id;
       const query = transactionQuerySchema.parse(req.query || {});
 
-      const transactions = await inventoryService.getInventoryTransactions(
+      // Get all transactions for accurate total count
+      const filterOptions = {
+        transaction_type: query.transaction_type as InventoryTransactionType | undefined,
+        start_date: query.start_date,
+        end_date: query.end_date
+      };
+
+      const allTransactions = await inventoryService.getInventoryTransactions(
         inventoryId,
         accountId,
-        {
-          limit: query.limit,
-          offset: (query.page - 1) * query.limit
-        }
+        filterOptions
       );
 
-      paginatedResponse(res, transactions, transactions.length, query.page, query.limit, {
+      const start = (query.page - 1) * query.limit;
+      const paginatedTransactions = allTransactions.slice(start, start + query.limit);
+
+      paginatedResponse(res, paginatedTransactions, allTransactions.length, query.page, query.limit, {
         requestId: req.requestId
       });
     },
@@ -326,35 +364,6 @@ export function registerInventoryRoutes(router: Router): void {
       authenticate(),
       requireRole('owner', 'admin', 'manager'),
       validateParams(z.object({ id: z.string().uuid() })),
-      validateQuery(transactionQuerySchema)
-    ]
-  );
-
-  /**
-   * GET /api/v1/inventory/transactions
-   * Get all inventory transactions for the account
-   */
-  router.get(
-    '/api/v1/inventory/transactions',
-    async (req: ApiRequest, res: ApiResponse) => {
-      const accountId = req.accountId!;
-      const query = transactionQuerySchema.parse(req.query || {});
-
-      const transactions = await inventoryService.getAccountTransactions(accountId, {
-        transaction_type: query.transaction_type as InventoryTransactionType | undefined,
-        start_date: query.start_date,
-        end_date: query.end_date,
-        limit: query.limit,
-        offset: (query.page - 1) * query.limit
-      });
-
-      paginatedResponse(res, transactions, transactions.length, query.page, query.limit, {
-        requestId: req.requestId
-      });
-    },
-    [
-      authenticate(),
-      requireRole('owner', 'admin', 'manager'),
       validateQuery(transactionQuerySchema)
     ]
   );
@@ -370,20 +379,18 @@ export function registerInventoryRoutes(router: Router): void {
       const storeId = req.params.storeId;
       const query = querySchema.parse(req.query || {});
 
-      const inventory = await inventoryService.getInventory(
-        {
-          account_id: accountId,
-          store_id: storeId,
-          product_id: query.product_id,
-          low_stock_only: query.low_stock_only
-        },
-        {
-          limit: query.limit,
-          offset: (query.page - 1) * query.limit
-        }
-      );
+      // Get all matching records first for accurate total count
+      const allInventory = await inventoryService.getInventory({
+        account_id: accountId,
+        store_id: storeId,
+        product_id: query.product_id,
+        low_stock_only: query.low_stock_only
+      });
 
-      paginatedResponse(res, inventory, inventory.length, query.page, query.limit, {
+      const start = (query.page - 1) * query.limit;
+      const paginatedInventory = allInventory.slice(start, start + query.limit);
+
+      paginatedResponse(res, paginatedInventory, allInventory.length, query.page, query.limit, {
         requestId: req.requestId
       });
     },

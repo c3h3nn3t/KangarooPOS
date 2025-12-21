@@ -80,14 +80,16 @@ export function registerSyncRoutes(router: Router): void {
       const accountId = req.accountId!;
       const query = journalQuerySchema.parse(req.query || {});
 
-      const entries = await syncService.getSyncJournal(accountId, {
+      // Get all matching entries for accurate total count
+      const allEntries = await syncService.getSyncJournal(accountId, {
         status: query.status as SyncStatus | undefined,
-        table_name: query.table_name,
-        limit: query.limit,
-        offset: (query.page - 1) * query.limit
+        table_name: query.table_name
       });
 
-      paginatedResponse(res, entries, entries.length, query.page, query.limit, {
+      const start = (query.page - 1) * query.limit;
+      const paginatedEntries = allEntries.slice(start, start + query.limit);
+
+      paginatedResponse(res, paginatedEntries, allEntries.length, query.page, query.limit, {
         requestId: req.requestId
       });
     },

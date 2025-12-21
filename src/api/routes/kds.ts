@@ -59,21 +59,19 @@ export function registerKdsRoutes(router: Router): void {
       const accountId = req.accountId!;
       const query = getTicketsQuerySchema.parse(req.query || {});
 
-      const tickets = await kdsService.getTickets(
-        {
-          account_id: accountId,
-          store_id: query.store_id,
-          station: query.station,
-          status: query.status as KitchenTicketStatus | undefined,
-          assigned_to: query.assigned_to
-        },
-        {
-          limit: query.limit,
-          offset: (query.page - 1) * query.limit
-        }
-      );
+      // Get all matching tickets for accurate total count
+      const allTickets = await kdsService.getTickets({
+        account_id: accountId,
+        store_id: query.store_id,
+        station: query.station,
+        status: query.status as KitchenTicketStatus | undefined,
+        assigned_to: query.assigned_to
+      });
 
-      paginatedResponse(res, tickets, tickets.length, query.page, query.limit, {
+      const start = (query.page - 1) * query.limit;
+      const paginatedTickets = allTickets.slice(start, start + query.limit);
+
+      paginatedResponse(res, paginatedTickets, allTickets.length, query.page, query.limit, {
         requestId: req.requestId
       });
     },

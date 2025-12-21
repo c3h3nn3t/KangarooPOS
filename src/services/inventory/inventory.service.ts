@@ -538,19 +538,53 @@ export class InventoryService extends BaseService {
   async getInventoryTransactions(
     inventoryId: string,
     accountId: string,
-    options?: SelectOptions
+    options?: SelectOptions & {
+      transaction_type?: InventoryTransactionType;
+      start_date?: string;
+      end_date?: string;
+    }
   ): Promise<InventoryTransaction[]> {
     // Verify inventory belongs to account
     await this.getInventoryById(inventoryId, accountId);
 
-    const result = await this.db.select<InventoryTransaction>('inventory_transactions', {
-      ...options,
-      where: [
-        { column: 'inventory_id', operator: '=' as const, value: inventoryId },
-        ...(options?.where || [])
-      ],
+    const where: Array<{ column: string; operator: '=' | '>=' | '<='; value: unknown }> = [
+      { column: 'inventory_id', operator: '=' as const, value: inventoryId }
+    ];
+
+    if (options?.transaction_type) {
+      where.push({
+        column: 'transaction_type',
+        operator: '=' as const,
+        value: options.transaction_type
+      });
+    }
+
+    if (options?.start_date) {
+      where.push({
+        column: 'created_at',
+        operator: '>=' as const,
+        value: options.start_date
+      });
+    }
+
+    if (options?.end_date) {
+      where.push({
+        column: 'created_at',
+        operator: '<=' as const,
+        value: options.end_date
+      });
+    }
+
+    // Build select options excluding filter-specific properties that aren't part of SelectOptions
+    const selectOptions: SelectOptions = {
+      limit: options?.limit || 100,
+      offset: options?.offset,
+      columns: options?.columns,
+      where: [...where, ...(options?.where || [])],
       orderBy: [{ column: 'created_at', direction: 'desc' as const }]
-    });
+    };
+
+    const result = await this.db.select<InventoryTransaction>('inventory_transactions', selectOptions);
 
     if (result.error) {
       throw new Error(`Failed to fetch transactions: ${result.error}`);
