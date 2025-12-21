@@ -8,6 +8,306 @@ KangarooPOS is an offline-first Point of Sale system with hybrid cloud/edge data
 
 ---
 
+## Tech Stack & Dependency Management
+
+### Runtime & Language
+- **Node.js**: Requires Node.js 20+ (LTS recommended)
+  - **Module System**: CommonJS (`"type": "commonjs"`)
+  - **Target**: ES2022 (configured in `tsconfig.json`)
+  - **Best Practice**: Use Node.js 20.x LTS for production. Ensure `engines` field in `package.json` specifies version requirement.
+
+### TypeScript
+- **Version**: `^5.9.3` (TypeScript 5.9.x)
+  - **Status**: Latest stable 5.x release (as of 2025)
+  - **Configuration**: Strict mode enabled, ES2022 target, CommonJS modules
+  - **Best Practices**:
+    - **ALWAYS** use strict mode (`"strict": true` in `tsconfig.json`)
+    - **ALWAYS** enable `skipLibCheck: true` for faster compilation
+    - **ALWAYS** use path aliases (`@/*`) for cleaner imports
+    - **ALWAYS** generate declaration maps (`declarationMap: true`) for better IDE support
+    - **NEVER** use `any` - TypeScript 5.9 has improved type inference, leverage it
+    - **ALWAYS** use `satisfies` operator for type-safe object literals (TypeScript 4.9+)
+    - **ALWAYS** use `as const` for literal types in Zod schemas
+
+### Database & Storage
+
+#### Supabase Client
+- **Package**: `@supabase/supabase-js`
+- **Version**: `^2.87.1` (Supabase JS v2.87.x)
+  - **Status**: Recent stable release
+  - **Best Practices**:
+    - **ALWAYS** use Row Level Security (RLS) policies - Supabase enforces RLS at database level
+    - **ALWAYS** handle connection errors gracefully - Supabase client may fail silently
+    - **ALWAYS** use `.single()` for single row queries to get proper error handling
+    - **ALWAYS** check for `error` property in responses before accessing `data`
+    - **ALWAYS** use `.from()` with explicit table names (never dynamic table names from user input)
+    - **ALWAYS** use `.select()` with explicit columns for security and performance
+    - **NEVER** expose Supabase service role key in client-side code
+    - **ALWAYS** use environment variables for Supabase URL and anon key
+    - **Best Practice**: Use Supabase's realtime subscriptions sparingly - they can impact performance
+    - **Best Practice**: Batch operations when possible - Supabase supports batch inserts/updates
+
+#### SQLite (Edge Database)
+- **Package**: `better-sqlite3`
+- **Version**: `^11.7.0` (better-sqlite3 v11.7.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** use prepared statements for repeated queries (performance)
+    - **ALWAYS** use transactions for multi-step operations (ACID guarantees)
+    - **ALWAYS** handle database locking - better-sqlite3 uses synchronous API, be careful with concurrent access
+    - **ALWAYS** use WAL mode for better concurrency: `PRAGMA journal_mode=WAL`
+    - **ALWAYS** set appropriate busy timeout: `PRAGMA busy_timeout=5000`
+    - **ALWAYS** use `.serialize()` for complex queries to ensure atomic execution
+    - **NEVER** use dynamic SQL from user input - always use parameterized queries
+    - **Best Practice**: Close database connections properly in cleanup handlers
+    - **Best Practice**: Use connection pooling if multiple services access edge database
+    - **Performance**: better-sqlite3 is synchronous - avoid blocking operations in hot paths
+    - **Note**: better-sqlite3 requires native compilation - ensure build tools are available
+
+### Validation & Schema
+
+#### Zod
+- **Package**: `zod`
+- **Version**: `^3.24.2` (Zod v3.24.x)
+  - **Status**: Latest stable 3.x release
+  - **Best Practices**:
+    - **ALWAYS** use Zod schemas for all external inputs (request body, query params, path params)
+    - **ALWAYS** use `.parse()` in route handlers (throws on validation failure)
+    - **ALWAYS** use `.safeParse()` when validation errors should be handled gracefully
+    - **ALWAYS** use `z.coerce` for type coercion (e.g., `z.coerce.number()` for query params)
+    - **ALWAYS** use `as const` for literal types: `z.literal('active' as const)`
+    - **ALWAYS** define schemas close to usage (co-locate with route handlers)
+    - **ALWAYS** use `.refine()` for complex validation rules (e.g., date ranges, conditional validation)
+    - **ALWAYS** export schemas for reuse and testing
+    - **Best Practice**: Use `.describe()` for better error messages
+    - **Best Practice**: Create base schemas and extend them (DRY principle)
+    - **Performance**: Zod is fast, but avoid deeply nested schemas in hot paths
+    - **Type Safety**: Use `z.infer<typeof schema>` to extract TypeScript types from Zod schemas
+
+### Authentication & Security
+
+#### bcrypt
+- **Package**: `bcrypt`
+- **Version**: `^6.0.0` (bcrypt v6.x)
+  - **Status**: Latest major version (breaking changes from v5.x)
+  - **Best Practices**:
+    - **ALWAYS** use async API (`bcrypt.hash()`, `bcrypt.compare()`) - v6.x is async-first
+    - **ALWAYS** use salt rounds of 10-12 for production (balance between security and performance)
+    - **ALWAYS** handle errors - bcrypt operations can fail
+    - **NEVER** store plain text passwords - always hash before storage
+    - **NEVER** use synchronous bcrypt in request handlers (blocks event loop)
+    - **Best Practice**: Use `bcrypt.compare()` for password verification (constant-time comparison)
+    - **Security**: bcrypt v6.x has improved security - ensure you're not using deprecated APIs
+    - **Migration Note**: If upgrading from bcrypt v5.x, check for breaking changes in async API
+
+### Logging & Observability
+
+#### Pino
+- **Package**: `pino`
+- **Version**: `^9.6.0` (Pino v9.6.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** use structured logging - pass objects as first parameter: `logger.info({ accountId, orderId }, 'message')`
+    - **ALWAYS** use appropriate log levels: `error`, `warn`, `info`, `debug`
+    - **ALWAYS** include context in log messages (accountId, userId, requestId, etc.)
+    - **NEVER** log sensitive data (passwords, tokens, full request bodies)
+    - **NEVER** use string interpolation - use structured logging: `logger.info({ userId }, 'User logged in')` not `logger.info(\`User ${userId} logged in\`)`
+    - **Best Practice**: Use child loggers for request-scoped logging: `logger.child({ requestId })`
+    - **Best Practice**: Configure log levels via environment variables
+    - **Performance**: Pino is extremely fast - use it for all logging needs
+    - **Production**: Configure Pino with appropriate transports (file, remote logging service)
+
+### Utilities
+
+#### UUID
+- **Package**: `uuid`
+- **Version**: `^11.1.0` (uuid v11.x)
+  - **Status**: Latest major version (v11.x has breaking changes from v10.x)
+  - **Best Practices**:
+    - **ALWAYS** use `uuid.v4()` for random UUIDs (most common use case)
+    - **ALWAYS** use `uuid.v7()` for time-ordered UUIDs if you need sortable IDs (UUID v7 is new in v11.x)
+    - **ALWAYS** validate UUIDs before database operations (use Zod schema: `z.string().uuid()`)
+    - **NEVER** use `uuid.v1()` unless you need MAC address-based UUIDs (privacy concerns)
+    - **Best Practice**: Use UUID v7 for primary keys if you need chronological ordering
+    - **Migration Note**: uuid v11.x requires Node.js 18+ - ensure compatibility
+    - **Type Safety**: Use `@types/uuid` v10.x (compatible with uuid v11.x)
+
+#### dotenv
+- **Package**: `dotenv`
+- **Version**: `^17.2.3` (dotenv v17.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** load dotenv early in application startup (before other config)
+    - **ALWAYS** validate environment variables with Zod schemas (see `src/config/env.ts`)
+    - **ALWAYS** provide default values for non-critical environment variables
+    - **NEVER** commit `.env` files to version control
+    - **ALWAYS** provide `.env.example` with all required variables (without values)
+    - **Best Practice**: Use `dotenv/config` import for automatic loading
+    - **Best Practice**: Validate all environment variables at startup (fail fast)
+
+### Development Tools
+
+#### Biome
+- **Package**: `@biomejs/biome`
+- **Version**: `^1.9.4` (Biome v1.9.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** run `biome check --write` before committing (format + lint)
+    - **ALWAYS** use Biome's organize imports feature (`organizeImports.enabled: true`)
+    - **ALWAYS** follow Biome's recommended rules (`rules.recommended: true`)
+    - **ALWAYS** configure Biome to match project style (single quotes, semicolons, 2-space indent)
+    - **NEVER** disable Biome rules without justification
+    - **Best Practice**: Use Biome instead of ESLint + Prettier (faster, single tool)
+    - **Best Practice**: Configure Biome to auto-fix on save in IDE
+    - **Performance**: Biome is significantly faster than ESLint + Prettier
+    - **Configuration**: Biome config is in `biome.json` - keep it synchronized with team preferences
+
+#### Vitest
+- **Package**: `vitest`
+- **Version**: `^3.0.0` (Vitest v3.x)
+  - **Status**: Latest major version
+  - **Best Practices**:
+    - **ALWAYS** write tests for new services and critical flows
+    - **ALWAYS** use `describe` blocks to organize tests
+    - **ALWAYS** use `it` or `test` for individual test cases
+    - **ALWAYS** mock database adapters in unit tests (don't hit real database)
+    - **ALWAYS** use `vi.mock()` for mocking modules
+    - **ALWAYS** test error cases, not just happy paths
+    - **Best Practice**: Use `test.concurrent()` for independent tests (faster execution)
+    - **Best Practice**: Use `beforeEach`/`afterEach` for test setup/teardown
+    - **Best Practice**: Configure coverage thresholds in `vitest.config.ts`
+    - **Performance**: Vitest is fast - use it for all testing needs
+    - **Configuration**: Vitest config supports path aliases - ensure they match `tsconfig.json`
+
+#### TypeScript Development Tools
+- **ts-node**: `^10.9.2` - TypeScript execution for Node.js
+- **ts-node-dev**: `^2.0.0` - Development server with hot reload
+  - **Best Practices**:
+    - **ALWAYS** use `ts-node-dev` for development (faster than `ts-node` + `nodemon`)
+    - **ALWAYS** use `--transpile-only` flag for faster compilation (skip type checking)
+    - **ALWAYS** run `tsc --noEmit` separately for type checking (`typecheck` script)
+    - **Best Practice**: Use `--respawn` flag to auto-restart on file changes
+    - **Performance**: `ts-node-dev` is faster than alternatives for development
+
+### Type Definitions
+
+#### @types/node
+- **Version**: `^24.10.2` (Node.js v24 types)
+  - **Status**: Matches Node.js 20+ runtime
+  - **Best Practice**: Keep @types/node version aligned with Node.js runtime version
+
+#### @types/bcrypt
+- **Version**: `^6.0.0`
+  - **Status**: Matches bcrypt v6.x
+  - **Best Practice**: Keep @types packages aligned with their corresponding runtime packages
+
+#### @types/better-sqlite3
+- **Version**: `^7.6.12`
+  - **Status**: Latest stable types
+  - **Best Practice**: Keep @types packages updated for better TypeScript support
+
+#### @types/uuid
+- **Version**: `^10.0.0`
+  - **Status**: Compatible with uuid v11.x
+  - **Best Practice**: @types/uuid v10.x works with uuid v11.x (no breaking changes in types)
+
+### Dependency Management Best Practices
+
+#### Version Pinning Strategy
+- **Production Dependencies**: Use `^` (caret) for minor/patch updates (e.g., `^2.87.1`)
+  - Allows automatic updates for bug fixes and minor features
+  - Prevents breaking changes from major version updates
+- **Critical Dependencies**: Consider exact versions for security-critical packages (e.g., `bcrypt`, `uuid`)
+- **Dev Dependencies**: Use `^` for all dev dependencies (less critical, can update freely)
+
+#### Security & Updates
+- **ALWAYS** run `npm audit` regularly to check for security vulnerabilities
+- **ALWAYS** run `npm outdated` to identify outdated packages
+- **ALWAYS** update dependencies in a controlled manner (test after updates)
+- **ALWAYS** review changelogs for breaking changes before major version updates
+- **NEVER** update all dependencies at once without testing
+- **Best Practice**: Use `npm audit fix` for automatic security fixes (review changes)
+- **Best Practice**: Pin exact versions for critical security packages if needed
+
+#### Lock Files
+- **ALWAYS** commit `package-lock.json` to version control
+- **ALWAYS** use `package-lock.json` for consistent installations
+- **NEVER** manually edit `package-lock.json`
+- **Best Practice**: Regenerate lock file after dependency updates: `npm install`
+
+#### Dependency Organization
+- **ALWAYS** separate `dependencies` (production) from `devDependencies` (development)
+- **ALWAYS** keep production dependencies minimal (only what's needed at runtime)
+- **ALWAYS** document why each dependency is needed (in code comments or README)
+- **NEVER** add dependencies without justification
+- **Best Practice**: Review dependencies periodically and remove unused packages
+
+#### Node.js Version Management
+- **ALWAYS** specify Node.js version requirement in `package.json`:
+  ```json
+  "engines": {
+    "node": ">=20.0.0"
+  }
+  ```
+- **ALWAYS** use Node.js LTS versions for production
+- **ALWAYS** test with the minimum required Node.js version
+- **Best Practice**: Use `.nvmrc` or `.node-version` file for local development
+
+### Version Compatibility Matrix
+
+| Package | Version | Node.js | TypeScript | Notes |
+|---------|---------|---------|------------|-------|
+| TypeScript | 5.9.3 | 18+ | - | Latest 5.x stable |
+| @supabase/supabase-js | 2.87.1 | 18+ | 4.7+ | Recent stable |
+| better-sqlite3 | 11.7.0 | 18+ | 4.7+ | Requires native build |
+| zod | 3.24.2 | 16+ | 4.1+ | Latest 3.x |
+| bcrypt | 6.0.0 | 18+ | 4.7+ | Breaking changes from v5 |
+| pino | 9.6.0 | 18+ | 4.7+ | Latest stable |
+| uuid | 11.1.0 | 18+ | 4.7+ | Breaking changes from v10 |
+| vitest | 3.0.0 | 18+ | 5.0+ | Latest major version |
+| biome | 1.9.4 | 18+ | 4.7+ | Latest stable |
+
+**Minimum Requirements**: Node.js 20+ (LTS), TypeScript 5.9+
+
+### Known Issues & Workarounds
+
+1. **better-sqlite3 Native Compilation**:
+   - Issue: Requires native compilation (C++ bindings)
+   - Workaround: Ensure build tools are installed (`node-gyp`, Python, C++ compiler)
+   - Docker: Use Node.js images with build tools or multi-stage builds
+
+2. **bcrypt v6.x Async API**:
+   - Issue: Breaking changes from v5.x (async-first)
+   - Workaround: Ensure all bcrypt calls use async/await
+   - Migration: Review all bcrypt usage when upgrading from v5.x
+
+3. **uuid v11.x Node.js Requirement**:
+   - Issue: Requires Node.js 18+
+   - Workaround: Ensure Node.js 20+ (project requirement)
+   - Migration: No issues if already on Node.js 20+
+
+4. **Supabase Client Error Handling**:
+   - Issue: Supabase client may return errors in response object
+   - Workaround: Always check `result.error` before accessing `result.data`
+   - Pattern: Use consistent error checking pattern across codebase
+
+### Dependency Update Checklist
+
+When updating dependencies:
+
+- [ ] Review changelog for breaking changes
+- [ ] Update `package.json` with new version
+- [ ] Run `npm install` to update `package-lock.json`
+- [ ] Run `npm audit` to check for security issues
+- [ ] Run `npm run typecheck` to verify TypeScript compatibility
+- [ ] Run `npm run lint` to check for new linting rules
+- [ ] Run `npm test` to verify tests still pass
+- [ ] Test critical flows manually (auth, sync, transactions)
+- [ ] Update documentation if API changes
+- [ ] Commit changes with clear message: `chore(deps): update {package} to v{version}`
+
+---
+
 ## Core Principles
 
 ### 1. Architecture Integrity
@@ -119,6 +419,214 @@ src/
   types/            # TypeScript types
   utils/            # Utilities (logger, errors, datetime, etc.)
 ```
+
+### 13.1. Complete Directory Structure & File Reference
+
+This section provides a comprehensive reference of all source files and folders in the KangarooPOS project.
+
+#### Root Directory
+```
+KangarooPOS/
+├── src/                    # Source code (TypeScript)
+├── dist/                   # Compiled JavaScript output (generated)
+├── supabase/              # Supabase migrations and schema
+├── node_modules/          # Dependencies (generated)
+├── package.json           # Project dependencies and scripts
+├── package-lock.json      # Dependency lock file
+├── tsconfig.json          # TypeScript configuration
+├── vitest.config.ts       # Vitest test configuration
+├── biome.json             # Biome linting/formatting configuration
+├── Dockerfile             # Docker container configuration
+├── docker-compose.yml     # Docker Compose configuration
+├── IMPLEMENTATION_STATUS.md  # Project status documentation
+├── test-inventory-transactions.sh  # Test script
+└── test-sync-stats.sh     # Test script
+```
+
+#### Source Directory (`src/`)
+
+**Entry Point:**
+- `src/index.ts` - Application entry point, initializes server and routes
+
+**API Layer (`src/api/`):**
+- `src/api/router.ts` - Custom router implementation (replaces Express/Hono)
+- `src/api/response.ts` - Response helper functions (`successResponse`, `paginatedResponse`, `errorResponse`)
+- `src/api/middleware/` - Request middleware
+  - `src/api/middleware/index.ts` - Middleware exports
+  - `src/api/middleware/cors.ts` - CORS configuration
+  - `src/api/middleware/rateLimit.ts` - Rate limiting middleware
+  - `src/api/middleware/validation.ts` - Input validation middleware (`validateBody`, `validateQuery`, `validateParams`)
+- `src/api/routes/` - Route handlers (thin layer, delegates to services)
+  - `src/api/routes/index.ts` - Route registration and aggregation
+  - `src/api/routes/v1/index.ts` - API v1 route grouping
+  - `src/api/routes/health.ts` - Health check endpoint
+  - `src/api/routes/customers.ts` - Customer routes (`registerCustomerRoutes`)
+  - `src/api/routes/employees.ts` - Employee routes (`registerEmployeeRoutes`)
+  - `src/api/routes/inventory.ts` - Inventory routes (`registerInventoryRoutes`)
+  - `src/api/routes/orders.ts` - Order routes (`registerOrderRoutes`)
+  - `src/api/routes/payments.ts` - Payment routes (`registerPaymentRoutes`)
+  - `src/api/routes/products.ts` - Product routes (`registerProductRoutes`)
+  - `src/api/routes/reports.ts` - Report routes (`registerReportRoutes`)
+  - `src/api/routes/shifts.ts` - Shift routes (`registerShiftRoutes`)
+  - `src/api/routes/kds.ts` - Kitchen Display System routes (`registerKdsRoutes`)
+  - `src/api/routes/sync.ts` - Sync routes (`registerSyncRoutes`)
+
+**Authentication (`src/auth/`):**
+- `src/auth/index.ts` - Auth module exports
+- `src/auth/middleware.ts` - Authentication middleware (`authenticate`, `optionalAuth`, `requireRole`)
+- `src/auth/routes.ts` - Authentication routes (login, register, token refresh)
+
+**Configuration (`src/config/`):**
+- `src/config/index.ts` - Configuration exports
+- `src/config/env.ts` - Environment variable validation and loading
+- `src/config/database.ts` - Database client initialization and configuration
+
+**Database Layer (`src/db/`):**
+- `src/db/index.ts` - Database exports (exports hybrid adapter as `db`)
+- `src/db/types.ts` - Database adapter type definitions (`SelectOptions`, `WhereClause`, etc.)
+- `src/db/hybrid-adapter.ts` - **CRITICAL**: Hybrid adapter (cloud/edge switching, sync queueing)
+- `src/db/cloud-adapter.ts` - Supabase PostgreSQL adapter implementation
+- `src/db/edge-adapter.ts` - SQLite (better-sqlite3) adapter implementation
+- `src/db/edge-schema.ts` - SQLite schema definitions and migrations
+- `src/db/seed.ts` - Database seeding utilities
+
+**Services (`src/services/`):**
+- `src/services/base.service.ts` - **CRITICAL**: Base service class (all services extend this)
+- `src/services/index.ts` - Service exports
+
+**Domain Services (each in `src/services/{domain}/`):**
+- `src/services/customers/`
+  - `customer.service.ts` - `CustomerService` (customer CRUD, search)
+  - `index.ts` - Service exports
+- `src/services/employees/`
+  - `employee.service.ts` - `EmployeeService` (employee management, roles)
+  - `index.ts` - Service exports
+- `src/services/inventory/`
+  - `inventory.service.ts` - `InventoryService` (stock management, adjustments, transfers)
+  - `inventory.service.test.ts` - Unit tests
+  - `index.ts` - Service exports
+- `src/services/orders/`
+  - `order.service.ts` - `OrderService` (order creation, status updates, history)
+  - `order.service.test.ts` - Unit tests
+  - `index.ts` - Service exports
+- `src/services/payments/`
+  - `payment.service.ts` - `PaymentService` (payment processing, refunds)
+  - `payment.service.test.ts` - Unit tests
+  - `index.ts` - Service exports
+- `src/services/products/`
+  - `product.service.ts` - `ProductService` (product catalog, variants, pricing)
+  - `index.ts` - Service exports
+- `src/services/reports/`
+  - `report.service.ts` - `ReportService` (sales reports, analytics)
+  - `index.ts` - Service exports
+- `src/services/shifts/`
+  - `shift.service.ts` - `ShiftService` (shift management, clock in/out)
+  - `index.ts` - Service exports
+- `src/services/kds/`
+  - `kds.service.ts` - `KdsService` (kitchen display system, order status)
+  - `index.ts` - Service exports
+- `src/services/sync/`
+  - `sync.service.ts` - `SyncService` (sync operations, conflict resolution, stats)
+  - `index.ts` - Service exports
+
+**Types (`src/types/`):**
+- `src/types/index.ts` - Type exports
+- `src/types/api.ts` - API request/response types (`ApiRequest`, `ApiResponse`, `Router`)
+- `src/types/database.ts` - Database entity types (tables, columns, relationships)
+
+**Utilities (`src/utils/`):**
+- `src/utils/index.ts` - Utility exports
+- `src/utils/errors.ts` - **CRITICAL**: Custom error classes (`AppError`, `NotFoundError`, `ValidationError`, etc.)
+- `src/utils/logger.ts` - Structured logging (Pino logger instance)
+- `src/utils/agent-logger.ts` - Agent-specific logging utilities
+- `src/utils/money.ts` - Money/currency utilities (formatting, calculations)
+- `src/utils/datetime.ts` - Date/time utilities (formatting, timezone handling)
+- `src/utils/cache.ts` - Caching utilities (in-memory cache helpers)
+- `src/utils/idempotency.ts` - Idempotency key utilities
+
+#### Supabase Directory (`supabase/`)
+- `supabase/migrations/` - Database migration files
+  - `supabase/migrations/00001_initial_schema.sql` - Initial database schema
+  - `supabase/migrations/00002_rls_policies.sql` - Row Level Security policies
+
+#### Test Scripts (Root)
+- `test-inventory-transactions.sh` - Inventory transaction testing script
+- `test-sync-stats.sh` - Sync statistics testing script
+
+#### Important File Patterns
+
+**Service Files:**
+- Pattern: `src/services/{domain}/{domain}.service.ts`
+- Must extend `BaseService`
+- Must use `this.db` (hybrid adapter)
+- Must export service class and input/output interfaces
+- May include `{domain}.service.test.ts` for unit tests
+
+**Route Files:**
+- Pattern: `src/api/routes/{domain}.ts`
+- Must export `register{Domain}Routes(router: Router): void`
+- Must use middleware array pattern
+- Must delegate to services (no business logic)
+
+**Middleware Files:**
+- Pattern: `src/api/middleware/{name}.ts`
+- Must export middleware functions
+- Must be composable (return middleware function)
+
+**Database Adapter Files:**
+- `hybrid-adapter.ts` - **ALWAYS USE THIS** in services (via `this.db`)
+- `cloud-adapter.ts` - Supabase adapter (internal use only)
+- `edge-adapter.ts` - SQLite adapter (internal use only)
+- **NEVER** import `cloud-adapter` or `edge-adapter` directly in services/routes
+
+**Type Files:**
+- `types/api.ts` - API-related types (request, response, router)
+- `types/database.ts` - Database entity types
+- Use `interface` for public APIs, `type` for internal types
+
+**Utility Files:**
+- Each utility is self-contained
+- Export from `utils/index.ts` for convenience
+- Use structured logging from `utils/logger.ts`
+- Use custom errors from `utils/errors.ts`
+
+#### File Naming Conventions
+
+- **Services**: `{domain}.service.ts` (e.g., `inventory.service.ts`)
+- **Routes**: `{domain}.ts` (e.g., `inventory.ts`)
+- **Tests**: `{domain}.service.test.ts` or `{domain}.test.ts`
+- **Types**: `{domain}.ts` (e.g., `api.ts`, `database.ts`)
+- **Utils**: `{name}.ts` (e.g., `logger.ts`, `errors.ts`)
+- **Config**: `{name}.ts` (e.g., `env.ts`, `database.ts`)
+- **All files**: kebab-case for multi-word names
+
+#### Directory Organization Rules
+
+1. **Services**: One folder per domain, each with `{domain}.service.ts` and `index.ts`
+2. **Routes**: Flat structure in `api/routes/`, one file per domain
+3. **Middleware**: Flat structure in `api/middleware/`, one file per middleware type
+4. **Utils**: Flat structure, each utility in its own file
+5. **Types**: Flat structure, grouped by concern (api, database)
+6. **Tests**: Co-located with service files (same directory)
+
+#### Critical Files Reference
+
+**Must Understand Before Modifying:**
+- `src/db/hybrid-adapter.ts` - Core database abstraction
+- `src/services/base.service.ts` - Base class for all services
+- `src/api/router.ts` - Custom router implementation
+- `src/utils/errors.ts` - Error handling patterns
+
+**Must Follow Patterns:**
+- All services extend `BaseService` (see `base.service.ts`)
+- All routes use middleware array (see any route file)
+- All services use `this.db` (hybrid adapter, see `base.service.ts`)
+- All errors use custom error classes (see `utils/errors.ts`)
+
+**Migration Files:**
+- Always create new migration in `supabase/migrations/`
+- Use sequential numbering: `00003_{description}.sql`
+- Update `edge-schema.ts` when cloud schema changes
 
 ### 14. Naming Conventions
 - **Services**: `{Domain}Service` (e.g., `InventoryService`, `OrderService`)

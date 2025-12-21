@@ -5,6 +5,7 @@ import type { ApiRequest, ApiResponse, Middleware } from '../types/api';
 import type { Employee, UserRole } from '../types/database';
 import { ForbiddenError, UnauthorizedError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { pinRateLimiter } from './rate-limiter';
 
 const PIN_SALT_ROUNDS = 10;
 
@@ -171,6 +172,16 @@ export function authenticatePin(): Middleware {
       throw new UnauthorizedError('PIN and employee ID required');
     }
 
+    // Check rate limit before attempting authentication
+    const rateLimitCheck = pinRateLimiter.check(employee_id, store_id);
+    if (!rateLimitCheck.allowed) {
+      logger.warn(
+        { employee_id, store_id, retryAfterMs: rateLimitCheck.retryAfterMs },
+        'PIN authentication blocked by rate limiter'
+      );
+      throw new UnauthorizedError(rateLimitCheck.message);
+    }
+
     // Try cloud first, fall back to edge for offline support
     let employee: Employee | null = null;
 
@@ -197,22 +208,33 @@ export function authenticatePin(): Middleware {
     }
 
     if (!employee) {
+      // Record failure for invalid employee ID
+      pinRateLimiter.recordFailure(employee_id, store_id);
       throw new UnauthorizedError('Invalid employee ID');
     }
 
     if (!employee.is_active) {
+      // Record failure for inactive employee
+      pinRateLimiter.recordFailure(employee_id, store_id);
       throw new ForbiddenError('Employee account is inactive');
     }
 
     if (!employee.pin_hash) {
+      // Record failure for missing PIN
+      pinRateLimiter.recordFailure(employee_id, store_id);
       throw new UnauthorizedError('Employee PIN not configured');
     }
 
     // Verify PIN hash
     const isValid = await bcrypt.compare(pin, employee.pin_hash);
     if (!isValid) {
-      throw new UnauthorizedError('Invalid PIN');
+      // Record failure and check if account should be locked
+      const failureResult = pinRateLimiter.recordFailure(employee_id, store_id);
+      throw new UnauthorizedError(failureResult.message);
     }
+
+    // PIN is valid - record success and clear rate limit
+    pinRateLimiter.recordSuccess(employee_id, store_id);
 
     // Validate store_id belongs to the employee's account if provided
     let validatedStoreId = employee.store_id;

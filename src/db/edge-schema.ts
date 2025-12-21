@@ -5,7 +5,7 @@ export const EDGE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS sync_journal (
   id TEXT PRIMARY KEY,
   operation TEXT NOT NULL CHECK(operation IN ('insert', 'update', 'delete')),
-  "table" TEXT NOT NULL,
+  table_name TEXT NOT NULL,
   record_id TEXT NOT NULL,
   data TEXT NOT NULL,
   timestamp TEXT NOT NULL,
@@ -14,11 +14,28 @@ CREATE TABLE IF NOT EXISTS sync_journal (
   checksum TEXT NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0,
   last_attempt TEXT,
-  error TEXT
+  error TEXT,
+  synced_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_journal_status ON sync_journal(status);
 CREATE INDEX IF NOT EXISTS idx_sync_journal_timestamp ON sync_journal(timestamp);
+
+-- Sync Conflicts (for conflict resolution)
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+  id TEXT PRIMARY KEY,
+  sync_journal_id TEXT NOT NULL REFERENCES sync_journal(id),
+  conflict_type TEXT CHECK(conflict_type IN ('version', 'delete', 'constraint')),
+  local_data TEXT NOT NULL,
+  remote_data TEXT NOT NULL,
+  resolution TEXT CHECK(resolution IN ('local_wins', 'remote_wins', 'merged', 'manual')),
+  resolved_data TEXT,
+  resolved_by TEXT,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_journal ON sync_conflicts(sync_journal_id);
 
 -- Local metadata
 CREATE TABLE IF NOT EXISTS edge_metadata (
@@ -266,6 +283,7 @@ CREATE INDEX IF NOT EXISTS idx_refunds_order ON refunds(order_id);
 -- Shifts
 CREATE TABLE IF NOT EXISTS shifts (
   id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
   store_id TEXT NOT NULL,
   employee_id TEXT NOT NULL,
   device_id TEXT,
@@ -274,16 +292,172 @@ CREATE TABLE IF NOT EXISTS shifts (
   closing_cash_cents INTEGER,
   expected_cash_cents INTEGER,
   discrepancy_cents INTEGER,
+  cash_in_cents INTEGER NOT NULL DEFAULT 0,
+  cash_out_cents INTEGER NOT NULL DEFAULT 0,
+  total_sales_cents INTEGER NOT NULL DEFAULT 0,
+  total_refunds_cents INTEGER NOT NULL DEFAULT 0,
+  total_tips_cents INTEGER NOT NULL DEFAULT 0,
+  transaction_count INTEGER NOT NULL DEFAULT 0,
   opened_at TEXT NOT NULL,
   closed_at TEXT,
   notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
   synced_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_shifts_employee ON shifts(employee_id);
 CREATE INDEX IF NOT EXISTS idx_shifts_status ON shifts(status);
+CREATE INDEX IF NOT EXISTS idx_shifts_store ON shifts(store_id);
+
+-- Inventory (for offline stock tracking)
+CREATE TABLE IF NOT EXISTS inventory (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  store_id TEXT NOT NULL,
+  product_id TEXT NOT NULL REFERENCES products(id),
+  variant_id TEXT REFERENCES product_variants(id),
+  quantity REAL NOT NULL DEFAULT 0,
+  low_stock_threshold REAL,
+  reorder_point REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT,
+  UNIQUE(store_id, product_id, variant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_store ON inventory(store_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_product ON inventory(product_id);
+
+-- Inventory Transactions (for offline stock changes)
+CREATE TABLE IF NOT EXISTS inventory_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  inventory_id TEXT NOT NULL REFERENCES inventory(id),
+  transaction_type TEXT NOT NULL CHECK(transaction_type IN ('sale', 'refund', 'adjustment', 'transfer_in', 'transfer_out', 'count', 'purchase', 'production')),
+  quantity_change REAL NOT NULL,
+  quantity_before REAL NOT NULL,
+  quantity_after REAL NOT NULL,
+  reference_type TEXT,
+  reference_id TEXT,
+  reason TEXT,
+  notes TEXT,
+  employee_id TEXT,
+  created_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_inv_transactions_inventory ON inventory_transactions(inventory_id);
+
+-- Kitchen Tickets (for KDS - Kitchen Display System)
+CREATE TABLE IF NOT EXISTS kitchen_tickets (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  store_id TEXT NOT NULL,
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  station TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'preparing', 'ready', 'served', 'cancelled')),
+  items TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  started_at TEXT,
+  completed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kitchen_tickets_order ON kitchen_tickets(order_id);
+CREATE INDEX IF NOT EXISTS idx_kitchen_tickets_status ON kitchen_tickets(status);
+CREATE INDEX IF NOT EXISTS idx_kitchen_tickets_station ON kitchen_tickets(station);
+
+-- Loyalty Accounts (for offline point display)
+CREATE TABLE IF NOT EXISTS loyalty_accounts (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  points_balance INTEGER NOT NULL DEFAULT 0,
+  lifetime_points INTEGER NOT NULL DEFAULT 0,
+  tier TEXT DEFAULT 'standard',
+  enrolled_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT,
+  UNIQUE(customer_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_loyalty_customer ON loyalty_accounts(customer_id);
+
+-- Loyalty Transactions (for offline redemption history)
+CREATE TABLE IF NOT EXISTS loyalty_transactions (
+  id TEXT PRIMARY KEY,
+  loyalty_account_id TEXT NOT NULL REFERENCES loyalty_accounts(id),
+  transaction_type TEXT NOT NULL CHECK(transaction_type IN ('earn', 'redeem', 'adjust', 'expire')),
+  points INTEGER NOT NULL,
+  balance_before INTEGER NOT NULL,
+  balance_after INTEGER NOT NULL,
+  reference_type TEXT,
+  reference_id TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_loyalty_trans_account ON loyalty_transactions(loyalty_account_id);
+
+-- Tax Groups (for grouping tax rules)
+CREATE TABLE IF NOT EXISTS tax_groups (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+-- Composite Components (for product bundles/recipes)
+CREATE TABLE IF NOT EXISTS composite_components (
+  id TEXT PRIMARY KEY,
+  parent_product_id TEXT NOT NULL REFERENCES products(id),
+  component_product_id TEXT NOT NULL REFERENCES products(id),
+  component_variant_id TEXT REFERENCES product_variants(id),
+  quantity REAL NOT NULL DEFAULT 1,
+  is_required INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_composite_parent ON composite_components(parent_product_id);
+CREATE INDEX IF NOT EXISTS idx_composite_component ON composite_components(component_product_id);
+
+-- Stores (cached for offline reference)
+CREATE TABLE IF NOT EXISTS stores (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  code TEXT,
+  address_line1 TEXT,
+  city TEXT,
+  state TEXT,
+  postal_code TEXT,
+  phone TEXT,
+  timezone TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_stores_account ON stores(account_id);
 `;
 
-export function initializeEdgeSchema(db: { exec: (sql: string) => void }): void {
+import { edgeDb } from './edge-adapter';
+
+export function initializeEdgeSchema(): void {
+  const db = edgeDb.getDatabase();
   db.exec(EDGE_SCHEMA);
 }

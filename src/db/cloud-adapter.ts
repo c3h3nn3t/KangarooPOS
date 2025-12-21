@@ -1,12 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase, supabaseAdmin } from '../config/database';
 import type {
-  DatabaseAdapter,
+  CompleteOrderPaymentResult,
+  ExtendedDatabaseAdapter,
   MutationResult,
   QueryResult,
+  RpcOperation,
+  RpcTransactionResult,
   SelectOptions,
   SingleResult,
+  SyncBatchResult,
+  SyncJournalEntry,
   TransactionContext,
+  TransferInventoryResult,
   WhereClause
 } from './types';
 
@@ -52,12 +58,14 @@ function applyWhereClause(query: QueryBuilder, where: WhereClause[]): QueryBuild
   return q;
 }
 
-export class CloudAdapter implements DatabaseAdapter {
+export class CloudAdapter implements ExtendedDatabaseAdapter {
   readonly type = 'cloud' as const;
   private client: SupabaseClient;
+  private useAdmin: boolean;
 
   constructor(useAdmin = false) {
     this.client = useAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    this.useAdmin = useAdmin;
   }
 
   get isOnline(): boolean {
@@ -154,9 +162,8 @@ export class CloudAdapter implements DatabaseAdapter {
   }
 
   async transaction<T>(callback: (tx: TransactionContext) => Promise<T>): Promise<T> {
-    // Supabase doesn't have native transaction support via the client
-    // We simulate it by using the same client instance
-    // For true ACID transactions, use Postgres functions or edge functions
+    // For backwards compatibility, still provide the TransactionContext interface
+    // However, this is NOT atomic - for true ACID transactions, use executeTransaction() or specialized RPC methods
     const tx: TransactionContext = {
       insert: <U>(t: string, d: Partial<U>) => this.insert<U>(t, d),
       update: <U>(t: string, i: string, d: Partial<U>) => this.update<U>(t, i, d),
@@ -164,6 +171,112 @@ export class CloudAdapter implements DatabaseAdapter {
     };
 
     return callback(tx);
+  }
+
+  // =============================================================================
+  // RPC-BASED ACID TRANSACTION METHODS
+  // =============================================================================
+
+  /**
+   * Execute multiple operations in a single ACID transaction via PostgreSQL RPC
+   * All operations succeed or all fail together
+   */
+  async executeTransaction(
+    operations: RpcOperation[],
+    accountId: string
+  ): Promise<RpcTransactionResult> {
+    const { data, error } = await this.client.rpc('execute_transaction', {
+      p_operations: operations,
+      p_account_id: accountId
+    });
+
+    if (error) {
+      throw new Error(`Transaction failed: ${error.message}`);
+    }
+
+    return data as RpcTransactionResult;
+  }
+
+  /**
+   * Atomically complete an order with payment
+   * Handles: order status update, payment creation, inventory deduction, customer stats
+   */
+  async completeOrderWithPayment(
+    orderId: string,
+    paymentData: Record<string, unknown>,
+    accountId: string,
+    deductInventory = true
+  ): Promise<CompleteOrderPaymentResult> {
+    const { data, error } = await this.client.rpc('complete_order_with_payment', {
+      p_order_id: orderId,
+      p_payment_data: paymentData,
+      p_account_id: accountId,
+      p_deduct_inventory: deductInventory
+    });
+
+    if (error) {
+      throw new Error(`Complete order failed: ${error.message}`);
+    }
+
+    return data as CompleteOrderPaymentResult;
+  }
+
+  /**
+   * Atomically transfer inventory between stores
+   * Creates paired transfer_in/transfer_out transactions
+   */
+  async transferInventory(
+    fromStoreId: string,
+    toStoreId: string,
+    items: Array<{ product_id: string; variant_id?: string; quantity: number }>,
+    accountId: string,
+    employeeId?: string,
+    notes?: string
+  ): Promise<TransferInventoryResult> {
+    const { data, error } = await this.client.rpc('transfer_inventory', {
+      p_from_store_id: fromStoreId,
+      p_to_store_id: toStoreId,
+      p_items: items,
+      p_account_id: accountId,
+      p_employee_id: employeeId ?? null,
+      p_notes: notes ?? null
+    });
+
+    if (error) {
+      throw new Error(`Inventory transfer failed: ${error.message}`);
+    }
+
+    return data as TransferInventoryResult;
+  }
+
+  /**
+   * Sync batch of offline operations atomically
+   * Processes sync journal entries from edge nodes
+   */
+  async syncBatchOperations(
+    entries: SyncJournalEntry[],
+    accountId: string,
+    edgeNodeId: string
+  ): Promise<SyncBatchResult> {
+    const formattedEntries = entries.map((entry) => ({
+      id: entry.id,
+      operation: entry.operation,
+      table: entry.table,
+      recordId: entry.recordId,
+      data: entry.data
+    }));
+
+    const { data, error } = await this.client.rpc('sync_batch_operations', {
+      p_entries: formattedEntries,
+      p_account_id: accountId,
+      p_edge_node_id: edgeNodeId
+    });
+
+    if (error) {
+      throw new Error(`Batch sync failed: ${error.message}`);
+    }
+
+    return data as SyncBatchResult;
   }
 }
 

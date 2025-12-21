@@ -98,6 +98,14 @@ export class EdgeAdapter implements DatabaseAdapter {
     return this.db;
   }
 
+  /**
+   * Get the raw SQLite database instance for schema initialization
+   * Use with caution - prefer using the adapter methods for normal operations
+   */
+  getDatabase(): Database.Database {
+    return this.getDb();
+  }
+
   close(): void {
     if (this.db) {
       this.db.close();
