@@ -22,7 +22,14 @@ const envSchema = z.object({
 
   // Feature Flags
   OFFLINE_REFUNDS_ENABLED: z.coerce.boolean().default(true),
-  SYNC_INTERVAL_MS: z.coerce.number().default(30000)
+  SYNC_INTERVAL_MS: z.coerce.number().default(30000),
+
+  // PIN Authentication Security
+  PIN_MAX_ATTEMPTS: z.coerce.number().default(5),
+  PIN_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000), // 15 minutes
+  PIN_LOCKOUT_MS: z.coerce.number().default(30 * 60 * 1000), // 30 minutes
+  PIN_LOCKOUT_MULTIPLIER: z.coerce.number().default(2),
+  PIN_MAX_LOCKOUT_MS: z.coerce.number().default(24 * 60 * 60 * 1000) // 24 hours
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -58,6 +65,13 @@ export const config = {
   features: {
     offlineRefundsEnabled: parsed.data.OFFLINE_REFUNDS_ENABLED,
     syncIntervalMs: parsed.data.SYNC_INTERVAL_MS
+  },
+  pin: {
+    maxAttempts: parsed.data.PIN_MAX_ATTEMPTS,
+    windowMs: parsed.data.PIN_WINDOW_MS,
+    lockoutMs: parsed.data.PIN_LOCKOUT_MS,
+    lockoutMultiplier: parsed.data.PIN_LOCKOUT_MULTIPLIER,
+    maxLockoutMs: parsed.data.PIN_MAX_LOCKOUT_MS
   }
 } as const;
 

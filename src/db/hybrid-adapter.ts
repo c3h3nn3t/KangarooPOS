@@ -38,9 +38,90 @@ export class HybridAdapter implements DatabaseAdapter {
   readonly type: DatabaseType = 'cloud';
   private _isOnline = true;
   private syncQueue: SyncJournalEntry[] = [];
+  private _initialized = false;
 
   get isOnline(): boolean {
     return this._isOnline;
+  }
+
+  get initialized(): boolean {
+    return this._initialized;
+  }
+
+  /**
+   * Initialize the hybrid adapter by loading pending sync entries from the database.
+   * This should be called on application startup before processing any requests.
+   */
+  async initialize(): Promise<void> {
+    if (this._initialized) {
+      logger.debug('HybridAdapter already initialized');
+      return;
+    }
+
+    logger.info('Initializing HybridAdapter - loading pending sync entries...');
+
+    try {
+      // Load pending and failed entries from edge database sync_journal table
+      const result = await edgeDb.select<SyncJournalEntry>('sync_journal', {
+        where: [
+          { column: 'status', operator: 'in', value: ['pending', 'failed', 'syncing'] }
+        ],
+        orderBy: [{ column: 'timestamp', direction: 'asc' }]
+      });
+
+      if (!result.error && result.data) {
+        // Map database column names to interface names (snake_case to camelCase)
+        this.syncQueue = result.data.map((entry) => {
+          const dbEntry = entry as unknown as Record<string, unknown>;
+          
+          // Parse data from JSON string to object
+          let parsedData: Record<string, unknown>;
+          try {
+            const dataStr = typeof dbEntry.data === 'string' ? dbEntry.data : JSON.stringify(dbEntry.data);
+            parsedData = JSON.parse(dataStr) as Record<string, unknown>;
+          } catch (error) {
+            logger.warn({ entryId: entry.id, error }, 'Failed to parse sync entry data, using empty object');
+            parsedData = {};
+          }
+
+          return {
+            id: entry.id,
+            operation: entry.operation,
+            table: (dbEntry.table_name as string) ?? entry.table ?? '',
+            recordId: (dbEntry.record_id as string) ?? entry.recordId ?? '',
+            data: parsedData,
+            timestamp: entry.timestamp,
+            edgeNodeId: (dbEntry.edge_node_id as string) ?? entry.edgeNodeId ?? '',
+            status: entry.status === 'syncing' ? 'pending' : entry.status, // Reset syncing to pending
+            checksum: entry.checksum,
+            attempts: entry.attempts,
+            lastAttempt: (dbEntry.last_attempt as string) ?? entry.lastAttempt ?? null,
+            error: entry.error
+          };
+        });
+
+        logger.info(
+          { pendingCount: this.syncQueue.length },
+          'Loaded pending sync entries from database'
+        );
+
+        // Reset any 'syncing' entries back to 'pending' (they were interrupted)
+        const syncingEntries = result.data.filter((e) => e.status === 'syncing');
+        for (const entry of syncingEntries) {
+          await edgeDb.update('sync_journal', entry.id, { status: 'pending' });
+        }
+      } else if (result.error) {
+        // Table might not exist yet, create it
+        logger.warn({ error: result.error }, 'Failed to load sync entries, table may not exist');
+      }
+
+      this._initialized = true;
+      logger.info('HybridAdapter initialization complete');
+    } catch (error) {
+      logger.error({ error }, 'Failed to initialize HybridAdapter');
+      // Still mark as initialized to prevent blocking, but log the error
+      this._initialized = true;
+    }
   }
 
   setOnlineStatus(online: boolean): void {
@@ -239,12 +320,26 @@ export class HybridAdapter implements DatabaseAdapter {
       attempts: 0
     };
 
+    // Add to in-memory queue
     this.syncQueue.push(entry);
 
-    // Also persist to edge database sync journal table
-    await edgeDb.insert('sync_journal', entry);
+    // Persist to edge database sync_journal table with snake_case column names
+    const dbEntry = {
+      id: entry.id,
+      operation: entry.operation,
+      table_name: entry.table, // 'table' is a reserved word in SQL
+      record_id: entry.recordId,
+      data: JSON.stringify(entry.data),
+      timestamp: entry.timestamp,
+      edge_node_id: entry.edgeNodeId,
+      status: entry.status,
+      checksum: entry.checksum,
+      attempts: entry.attempts
+    };
 
-    logger.debug({ entry }, 'Operation queued for sync');
+    await edgeDb.insert('sync_journal', dbEntry);
+
+    logger.debug({ entryId: entry.id, operation, table }, 'Operation queued for sync');
   }
 
   private computeChecksum(data: Record<string, unknown>): string {
@@ -270,7 +365,12 @@ export class HybridAdapter implements DatabaseAdapter {
     if (index !== -1) {
       this.syncQueue.splice(index, 1);
     }
-    await edgeDb.update('sync_journal', entryId, { status: 'synced' });
+    await edgeDb.update('sync_journal', entryId, {
+      status: 'synced',
+      synced_at: nowISO()
+    });
+
+    logger.debug({ entryId }, 'Sync entry marked as synced');
   }
 
   // Mark entry as failed
@@ -286,8 +386,40 @@ export class HybridAdapter implements DatabaseAdapter {
       status: 'failed',
       error,
       attempts: entry?.attempts ?? 1,
-      lastAttempt: nowISO()
+      last_attempt: nowISO()
     });
+
+    logger.warn({ entryId, error, attempts: entry?.attempts }, 'Sync entry marked as failed');
+  }
+
+  // Mark entry as conflict
+  async markConflict(entryId: string, message: string): Promise<void> {
+    const entry = this.syncQueue.find((e) => e.id === entryId);
+    if (entry) {
+      entry.status = 'conflict';
+      entry.error = message;
+      entry.lastAttempt = nowISO();
+    }
+    await edgeDb.update('sync_journal', entryId, {
+      status: 'conflict',
+      error: message,
+      last_attempt: nowISO()
+    });
+
+    logger.warn({ entryId, message }, 'Sync entry marked as conflict');
+  }
+
+  // Get sync queue statistics
+  getSyncStats(): { pending: number; failed: number; conflict: number; total: number } {
+    const pending = this.syncQueue.filter((e) => e.status === 'pending').length;
+    const failed = this.syncQueue.filter((e) => e.status === 'failed').length;
+    const conflict = this.syncQueue.filter((e) => e.status === 'conflict').length;
+    return { pending, failed, conflict, total: this.syncQueue.length };
+  }
+
+  // Remove synced entries from in-memory queue (cleanup)
+  cleanupSyncedEntries(): void {
+    this.syncQueue = this.syncQueue.filter((e) => e.status !== 'synced');
   }
 }
 
