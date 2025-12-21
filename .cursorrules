@@ -322,21 +322,263 @@ When suggesting code changes:
 
 ---
 
+## Rule Improvement & Continuous Learning
+
+This section defines how these rules evolve based on emerging patterns, code reviews, and best practices discovered in the codebase.
+
+### Rule Improvement Triggers
+
+Monitor and update rules when:
+
+- **New Code Patterns**: A pattern appears in 3+ files that isn't covered by existing rules
+- **Repeated Implementations**: Similar code structures appear across multiple services/routes
+- **Common Error Patterns**: Same bugs or violations appear repeatedly in code reviews
+- **New Libraries/Tools**: New dependencies are consistently used (e.g., new validation library, caching solution)
+- **Emerging Best Practices**: Team discovers better patterns through experimentation
+- **Architecture Evolution**: Hybrid adapter patterns evolve, new sync strategies emerge
+- **Performance Issues**: Common performance anti-patterns are identified
+- **Security Concerns**: New attack vectors or security patterns are discovered
+
+### Analysis Process
+
+When analyzing code for rule improvements:
+
+1. **Pattern Detection**:
+   - Compare new code with existing rules
+   - Identify patterns that should be standardized
+   - Look for deviations from established patterns
+   - Check for consistent error handling patterns across services
+
+2. **Code Review Patterns**:
+   - Monitor repeated feedback in PR reviews
+   - Track common questions from developers
+   - Identify frequently missed checklist items
+   - Note patterns that cause confusion
+
+3. **Test Patterns**:
+   - Observe test structure consistency
+   - Identify missing test scenarios
+   - Note common mocking patterns
+   - Track test coverage gaps
+
+4. **Database Patterns**:
+   - Monitor hybrid adapter usage patterns
+   - Track offline/online handling patterns
+   - Identify sync conflict resolution strategies
+   - Note transaction usage patterns
+
+5. **Service Patterns**:
+   - Compare service method structures
+   - Identify common input/output patterns
+   - Track validation patterns
+   - Note error handling consistency
+
+### Rule Updates
+
+#### Add New Rules When:
+
+- A new technology/pattern is used in 3+ files (e.g., new caching strategy, new validation approach)
+- Common bugs could be prevented by a rule (e.g., forgetting to check `result.error`)
+- Code reviews repeatedly mention the same feedback (e.g., "missing account_id check")
+- New security or performance patterns emerge (e.g., new sync strategy, new pagination approach)
+- Architecture decisions need to be codified (e.g., new adapter pattern, new middleware pattern)
+
+#### Modify Existing Rules When:
+
+- Better examples exist in the codebase (update code examples with real implementations)
+- Additional edge cases are discovered (e.g., new offline scenarios, new error types)
+- Related rules have been updated (ensure consistency)
+- Implementation details have changed (e.g., BaseService API changes, router API changes)
+- Patterns have evolved (e.g., new sync conflict resolution, new transaction patterns)
+
+#### Example Pattern Recognition
+
+```typescript
+// If you see repeated patterns like:
+const where = [
+  { column: 'account_id', operator: '=' as const, value: accountId }
+];
+if (storeId) {
+  where.push({ column: 'store_id', operator: '=' as const, value: storeId });
+}
+
+// Consider adding to Database Patterns section:
+// - Standard where clause construction pattern
+// - Account isolation enforcement pattern
+// - Optional filter pattern
+```
+
+```typescript
+// If you see repeated error handling:
+if (result.error) {
+  throw new Error(`Failed to fetch ${resource}: ${result.error}`);
+}
+
+// Consider standardizing:
+// - Error message format
+// - Error context inclusion
+// - Error type selection (AppError subclasses)
+```
+
+```typescript
+// If you see repeated service patterns:
+export class XService extends BaseService {
+  async getX(input: GetXInput, options?: SelectOptions): Promise<X[]> {
+    const where = [{ column: 'account_id', operator: '=' as const, value: input.account_id }];
+    // ... filtering logic
+    const result = await this.db.select<X>('x_table', { ...options, where });
+    if (result.error) {
+      throw new Error(`Failed to fetch X: ${result.error}`);
+    }
+    return result.data;
+  }
+}
+
+// Consider documenting:
+// - Standard service method structure
+// - Standard input/output interfaces
+// - Standard error handling
+// - Standard pagination support
+```
+
+### Rule Quality Checks
+
+Before adding or modifying rules, ensure:
+
+- **Actionable**: Rules should be specific and enforceable (not vague like "write good code")
+- **Examples from Codebase**: Examples should come from actual implementations in `src/`
+- **Up-to-Date References**: References to files, classes, functions should match current codebase
+- **Consistent Enforcement**: Patterns should be consistently applied across the codebase
+- **Testable**: Rules should be verifiable (can be checked in code reviews or automated)
+- **Context-Aware**: Rules should consider offline-first, hybrid adapter, and sync constraints
+
+### Continuous Improvement Process
+
+1. **Monitor Code Reviews**:
+   - Track common feedback patterns
+   - Note repeated violations
+   - Identify missing rule coverage
+
+2. **Track Development Questions**:
+   - Common "how do I..." questions indicate missing documentation
+   - Repeated clarifications suggest unclear rules
+   - New patterns emerge from questions
+
+3. **Update After Major Refactors**:
+   - When BaseService changes, update service patterns
+   - When router changes, update route patterns
+   - When adapter changes, update database patterns
+
+4. **Link Related Rules**:
+   - Cross-reference related patterns (e.g., service → route → validation)
+   - Maintain consistency across rule sections
+   - Update examples when referenced code changes
+
+5. **Document Breaking Changes**:
+   - When rules change significantly, document migration path
+   - Update examples to reflect new patterns
+   - Mark deprecated patterns clearly
+
+### Rule Deprecation
+
+When deprecating rules:
+
+1. **Mark as Deprecated**: Clearly indicate deprecated patterns
+2. **Provide Migration Path**: Show how to migrate from old to new pattern
+3. **Update References**: Remove or update references to deprecated patterns
+4. **Document Reason**: Explain why pattern is deprecated (security, performance, maintainability)
+
+Example:
+```markdown
+### ⚠️ DEPRECATED: Direct Database Access in Routes
+**Reason**: Bypasses service layer, breaks offline-first architecture
+**Migration**: Move logic to service, call service from route
+**Removed**: 2025-02-XX
+```
+
+### Documentation Synchronization
+
+Keep documentation synchronized with code:
+
+- **Code Examples**: Update examples when actual implementations change
+- **File References**: Update paths when files are moved/renamed
+- **API References**: Update when BaseService, Router, or adapter APIs change
+- **Pattern Examples**: Use real code from `src/` services and routes
+- **Version Tracking**: Update "Last Updated" date when rules change
+
+### Pattern Recognition Examples
+
+#### Service Pattern Recognition
+
+If you see this pattern in multiple services:
+```typescript
+async getX(input: GetXInput, options?: SelectOptions): Promise<X[]> {
+  const where = [{ column: 'account_id', operator: '=' as const, value: input.account_id }];
+  // ... filters
+  const result = await this.db.select<X>('x_table', { ...options, where });
+  if (result.error) throw new Error(`Failed: ${result.error}`);
+  return result.data;
+}
+```
+
+**Action**: Document as standard service getter pattern in Section 5 (Service Layer Patterns)
+
+#### Route Pattern Recognition
+
+If you see this pattern in multiple routes:
+```typescript
+router.get('/api/v1/x', async (req, res) => {
+  const accountId = req.accountId!;
+  const query = querySchema.parse(req.query || {});
+  const result = await service.getX({ account_id: accountId, ...query });
+  paginatedResponse(res, result.data, result.count || 0, query.page, query.limit);
+}, [authenticate(), requireRole('owner', 'admin'), validateQuery(querySchema)]);
+```
+
+**Action**: Document as standard route pattern in Section 6 (Route Patterns)
+
+#### Error Handling Pattern Recognition
+
+If you see inconsistent error handling:
+```typescript
+// Sometimes:
+if (result.error) throw new Error(result.error);
+
+// Sometimes:
+if (result.error) throw new NotFoundError('Resource', id);
+
+// Sometimes:
+if (result.error) {
+  logger.error({ error: result.error });
+  throw new Error('Operation failed');
+}
+```
+
+**Action**: Standardize error handling pattern and add to Section 3 (Error Handling)
+
+### Rule Versioning
+
+Track rule changes:
+
+- **Version**: Increment when rules change significantly
+- **Last Updated**: Update date when rules are modified
+- **Changelog**: Document major changes (optional, in comments)
+
+---
+
 **Last Updated**: 2025-01-XX
 **Version**: 1.0.0
 **Maintainer**: Development Team
-```
 
-Bu `.cursorrules` dosyası:
+---
 
-1. Mimari bütünlük: Hybrid adapter, service layer, custom router
-2. Tip güvenliği: Strict TypeScript, Zod validation
-3. Hata yönetimi: Custom error classes
-4. Veritabanı: Hybrid adapter kullanımı, transaction patterns
-5. Performans: Database-level pagination, batching
-6. Güvenlik: Account isolation, RBAC, input validation
-7. Test: Vitest, unit/integration test requirements
-8. Kod stili: Biome conventions, naming patterns
-9. Dokümantasyon: JSDoc, API documentation
+## Quick Reference: Rule Improvement Workflow
 
-Dosyayı proje root'una ekleyin. Cursor, bu kurallara göre kod önerileri yapacak ve tutarlılığı koruyacaktır.
+1. **Detect Pattern**: Identify recurring pattern or issue (3+ occurrences)
+2. **Analyze**: Compare with existing rules, check codebase examples
+3. **Draft Rule**: Write specific, actionable rule with real examples
+4. **Quality Check**: Ensure actionable, testable, consistent
+5. **Update Examples**: Use actual code from `src/` directory
+6. **Cross-Reference**: Link to related rules, update related sections
+7. **Document**: Update version, date, changelog if needed
+8. **Enforce**: Apply in code reviews, update checklist
