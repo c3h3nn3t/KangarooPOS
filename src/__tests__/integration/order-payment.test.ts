@@ -46,17 +46,17 @@ describe('Order to Payment Flow', () => {
         order_type: 'dine_in' as const
       };
 
-      db.insert.mockResolvedValueOnce({
-        data: createTestOrder({
-          id: 'order-1',
-          ...orderInput,
-          status: 'draft'
-        })
+      const draftOrder = createTestOrder({
+        id: 'order-1',
+        ...orderInput,
+        status: 'draft'
       });
+      await db.insert('orders', draftOrder);
 
       // Verify order was created with draft status
       const orders = db.getAll<{ id: string; status: string }>('orders');
-      expect(orders.length).toBeGreaterThanOrEqual(0); // Initial state
+      expect(orders).toHaveLength(1);
+      expect(orders[0].status).toBe('draft');
 
       // Step 2: Add items to order
       const orderItem = createTestOrderItem({

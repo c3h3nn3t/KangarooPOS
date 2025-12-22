@@ -9,25 +9,28 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerOrderRoutes } from '../orders';
 
-// Mock OrderService
-const mockOrderService = {
-  searchOrders: vi.fn(),
-  getOrderWithDetails: vi.fn(),
-  getOrderById: vi.fn(),
-  createOrder: vi.fn(),
-  updateOrder: vi.fn(),
-  getOrderItems: vi.fn(),
-  addOrderItem: vi.fn(),
-  updateOrderItem: vi.fn(),
-  removeOrderItem: vi.fn(),
-  applyDiscount: vi.fn(),
-  addTip: vi.fn(),
-  submitOrder: vi.fn(),
-  sendToKitchen: vi.fn(),
-  markReady: vi.fn(),
-  completeOrder: vi.fn(),
-  cancelOrder: vi.fn()
-};
+// Mock OrderService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockOrderService } = vi.hoisted(() => {
+  const mock = {
+    searchOrders: vi.fn(),
+    getOrderWithDetails: vi.fn(),
+    getOrderById: vi.fn(),
+    createOrder: vi.fn(),
+    updateOrder: vi.fn(),
+    getOrderItems: vi.fn(),
+    addOrderItem: vi.fn(),
+    updateOrderItem: vi.fn(),
+    removeOrderItem: vi.fn(),
+    applyDiscount: vi.fn(),
+    addTip: vi.fn(),
+    submitOrder: vi.fn(),
+    sendToKitchen: vi.fn(),
+    markReady: vi.fn(),
+    completeOrder: vi.fn(),
+    cancelOrder: vi.fn()
+  };
+  return { mockOrderService: mock };
+});
 
 vi.mock('../../../services/orders/order.service', () => ({
   OrderService: vi.fn(() => mockOrderService)

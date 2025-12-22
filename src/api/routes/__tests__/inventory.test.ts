@@ -9,20 +9,23 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerInventoryRoutes } from '../inventory';
 
-// Mock InventoryService
-const mockInventoryService = {
-  getInventory: vi.fn(),
-  getInventoryById: vi.fn(),
-  createInventory: vi.fn(),
-  updateInventory: vi.fn(),
-  adjustStock: vi.fn(),
-  transferStock: vi.fn(),
-  performStockCount: vi.fn(),
-  getInventoryTransactions: vi.fn(),
-  getAccountTransactions: vi.fn(),
-  getLowStockItems: vi.fn(),
-  getInventoryValue: vi.fn()
-};
+// Mock InventoryService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockInventoryService } = vi.hoisted(() => {
+  const mock = {
+    getInventory: vi.fn(),
+    getInventoryById: vi.fn(),
+    createInventory: vi.fn(),
+    updateInventory: vi.fn(),
+    adjustStock: vi.fn(),
+    transferStock: vi.fn(),
+    performStockCount: vi.fn(),
+    getInventoryTransactions: vi.fn(),
+    getAccountTransactions: vi.fn(),
+    getLowStockItems: vi.fn(),
+    getInventoryValue: vi.fn()
+  };
+  return { mockInventoryService: mock };
+});
 
 vi.mock('../../../services/inventory/inventory.service', () => ({
   InventoryService: vi.fn(() => mockInventoryService)

@@ -9,19 +9,22 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerSyncRoutes } from '../sync';
 
-// Mock SyncService
-const mockSyncService = {
-  getSyncStatus: vi.fn(),
-  triggerSync: vi.fn(),
-  getSyncJournal: vi.fn(),
-  getConflicts: vi.fn(),
-  resolveConflict: vi.fn(),
-  pullData: vi.fn(),
-  retryFailed: vi.fn(),
-  clearSyncedEntries: vi.fn(),
-  getSyncStats: vi.fn(),
-  setOnlineStatus: vi.fn()
-};
+// Mock SyncService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockSyncService } = vi.hoisted(() => {
+  const mock = {
+    getSyncStatus: vi.fn(),
+    triggerSync: vi.fn(),
+    getSyncJournal: vi.fn(),
+    getConflicts: vi.fn(),
+    resolveConflict: vi.fn(),
+    pullData: vi.fn(),
+    retryFailed: vi.fn(),
+    clearSyncedEntries: vi.fn(),
+    getSyncStats: vi.fn(),
+    setOnlineStatus: vi.fn()
+  };
+  return { mockSyncService: mock };
+});
 
 vi.mock('../../../services/sync/sync.service', () => ({
   SyncService: vi.fn(() => mockSyncService)

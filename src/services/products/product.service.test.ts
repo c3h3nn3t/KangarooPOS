@@ -177,9 +177,25 @@ describe('ProductService', () => {
     });
 
     it('should throw ValidationError for duplicate barcode', async () => {
-      mockDb.select
-        .mockResolvedValueOnce({ data: [], error: null }) // SKU check passes
-        .mockResolvedValueOnce({ data: [{ id: 'existing', barcode: 'BAR123' }], error: null }); // Barcode duplicate
+      const existingProduct: Product = {
+        id: 'existing',
+        account_id: accountId,
+        name: 'Existing Product',
+        barcode: 'BAR123',
+        price_cents: 500,
+        currency: 'USD',
+        track_stock: false,
+        sold_by_weight: false,
+        is_composite: false,
+        is_active: true,
+        sort_order: 0,
+        created_at: '2025-01-01T00:00:00Z',
+        updated_at: '2025-01-01T00:00:00Z'
+      };
+
+      // No SKU provided, so only barcode check will happen
+      // Mock the barcode check to return existing product
+      mockDb.select.mockResolvedValueOnce({ data: [existingProduct], error: null });
 
       await expect(
         service.createProduct({

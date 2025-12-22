@@ -9,25 +9,28 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerProductRoutes } from '../products';
 
-// Mock ProductService
-const mockProductService = {
-  getProducts: vi.fn(),
-  countProducts: vi.fn(),
-  searchProducts: vi.fn(),
-  getProductById: vi.fn(),
-  getProductWithDetails: vi.fn(),
-  getProductByBarcode: vi.fn(),
-  createProduct: vi.fn(),
-  updateProduct: vi.fn(),
-  deleteProduct: vi.fn(),
-  getVariants: vi.fn(),
-  createVariant: vi.fn(),
-  getCategories: vi.fn(),
-  getCategoryById: vi.fn(),
-  createCategory: vi.fn(),
-  getModifierGroups: vi.fn(),
-  getModifiers: vi.fn()
-};
+// Mock ProductService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockProductService } = vi.hoisted(() => {
+  const mock = {
+    getProducts: vi.fn(),
+    countProducts: vi.fn(),
+    searchProducts: vi.fn(),
+    getProductById: vi.fn(),
+    getProductWithDetails: vi.fn(),
+    getProductByBarcode: vi.fn(),
+    createProduct: vi.fn(),
+    updateProduct: vi.fn(),
+    deleteProduct: vi.fn(),
+    getVariants: vi.fn(),
+    createVariant: vi.fn(),
+    getCategories: vi.fn(),
+    getCategoryById: vi.fn(),
+    createCategory: vi.fn(),
+    getModifierGroups: vi.fn(),
+    getModifiers: vi.fn()
+  };
+  return { mockProductService: mock };
+});
 
 vi.mock('../../../services/products/product.service', () => ({
   ProductService: vi.fn(() => mockProductService)
@@ -142,7 +145,11 @@ describe('Product Routes', () => {
 
       await route.handler(req as any, res as any);
 
-      expect(res.body).toEqual({ success: true, data: null });
+      expect(res.body).toEqual({
+        success: true,
+        data: null,
+        meta: expect.any(Object)
+      });
     });
   });
 
@@ -267,10 +274,12 @@ describe('Product Routes', () => {
 
       await route.handler(req as any, res as any);
 
-      expect(mockProductService.createCategory).toHaveBeenCalledWith({
-        name: 'Food',
-        account_id: TEST_IDS.ACCOUNT_ID
-      });
+      expect(mockProductService.createCategory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Food',
+          account_id: TEST_IDS.ACCOUNT_ID
+        })
+      );
     });
   });
 

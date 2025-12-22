@@ -9,17 +9,20 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerShiftRoutes } from '../shifts';
 
-// Mock ShiftService
-const mockShiftService = {
-  searchShifts: vi.fn(),
-  getCurrentShift: vi.fn(),
-  getShiftById: vi.fn(),
-  getShiftSummary: vi.fn(),
-  openShift: vi.fn(),
-  closeShift: vi.fn(),
-  addCashMovement: vi.fn(),
-  getDailySummary: vi.fn()
-};
+// Mock ShiftService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockShiftService } = vi.hoisted(() => {
+  const mock = {
+    searchShifts: vi.fn(),
+    getCurrentShift: vi.fn(),
+    getShiftById: vi.fn(),
+    getShiftSummary: vi.fn(),
+    openShift: vi.fn(),
+    closeShift: vi.fn(),
+    addCashMovement: vi.fn(),
+    getDailySummary: vi.fn()
+  };
+  return { mockShiftService: mock };
+});
 
 vi.mock('../../../services/shifts/shift.service', () => ({
   ShiftService: vi.fn(() => mockShiftService)

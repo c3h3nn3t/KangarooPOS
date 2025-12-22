@@ -8,20 +8,23 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerReportRoutes } from '../reports';
 
-// Mock ReportService
-const mockReportService = {
-  getSalesSummary: vi.fn(),
-  getSalesByPeriod: vi.fn(),
-  getHourlySales: vi.fn(),
-  getPaymentSummary: vi.fn(),
-  getTopProducts: vi.fn(),
-  getEmployeeSales: vi.fn(),
-  getShiftSummaries: vi.fn(),
-  getDailySnapshots: vi.fn(),
-  getInventoryReport: vi.fn(),
-  getTaxReport: vi.fn(),
-  getDiscountReport: vi.fn()
-};
+// Mock ReportService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockReportService } = vi.hoisted(() => {
+  const mock = {
+    getSalesSummary: vi.fn(),
+    getSalesByPeriod: vi.fn(),
+    getHourlySales: vi.fn(),
+    getPaymentSummary: vi.fn(),
+    getTopProducts: vi.fn(),
+    getEmployeeSales: vi.fn(),
+    getShiftSummaries: vi.fn(),
+    getDailySnapshots: vi.fn(),
+    getInventoryReport: vi.fn(),
+    getTaxReport: vi.fn(),
+    getDiscountReport: vi.fn()
+  };
+  return { mockReportService: mock };
+});
 
 vi.mock('../../../services/reports/report.service', () => ({
   ReportService: vi.fn(() => mockReportService)

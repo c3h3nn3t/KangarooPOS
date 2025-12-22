@@ -9,23 +9,26 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerEmployeeRoutes } from '../employees';
 
-// Mock EmployeeService
-const mockEmployeeService = {
-  searchEmployees: vi.fn(),
-  getEmployeesWithoutPin: vi.fn(),
-  getEmployeeById: vi.fn(),
-  hasPinConfigured: vi.fn(),
-  createEmployee: vi.fn(),
-  updateEmployee: vi.fn(),
-  deactivateEmployee: vi.fn(),
-  reactivateEmployee: vi.fn(),
-  setPin: vi.fn(),
-  removePin: vi.fn(),
-  verifyPin: vi.fn(),
-  updatePermissions: vi.fn(),
-  assignToStore: vi.fn(),
-  getEmployeesByStore: vi.fn()
-};
+// Mock EmployeeService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockEmployeeService } = vi.hoisted(() => {
+  const mock = {
+    searchEmployees: vi.fn(),
+    getEmployeesWithoutPin: vi.fn(),
+    getEmployeeById: vi.fn(),
+    hasPinConfigured: vi.fn(),
+    createEmployee: vi.fn(),
+    updateEmployee: vi.fn(),
+    deactivateEmployee: vi.fn(),
+    reactivateEmployee: vi.fn(),
+    setPin: vi.fn(),
+    removePin: vi.fn(),
+    verifyPin: vi.fn(),
+    updatePermissions: vi.fn(),
+    assignToStore: vi.fn(),
+    getEmployeesByStore: vi.fn()
+  };
+  return { mockEmployeeService: mock };
+});
 
 vi.mock('../../../services/employees/employee.service', () => ({
   EmployeeService: vi.fn(() => mockEmployeeService)

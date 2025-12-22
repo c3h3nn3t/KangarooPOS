@@ -71,34 +71,20 @@ export class HybridAdapter implements DatabaseAdapter {
 
       if (!result.error && result.data) {
         // Map database column names to interface names (snake_case to camelCase)
-        this.syncQueue = result.data.map((entry) => {
-          const dbEntry = entry as unknown as Record<string, unknown>;
-          
-          // Parse data from JSON string to object
-          let parsedData: Record<string, unknown>;
-          try {
-            const dataStr = typeof dbEntry.data === 'string' ? dbEntry.data : JSON.stringify(dbEntry.data);
-            parsedData = JSON.parse(dataStr) as Record<string, unknown>;
-          } catch (error) {
-            logger.warn({ entryId: entry.id, error }, 'Failed to parse sync entry data, using empty object');
-            parsedData = {};
-          }
-
-          return {
-            id: entry.id,
-            operation: entry.operation,
-            table: (dbEntry.table_name as string) ?? entry.table ?? '',
-            recordId: (dbEntry.record_id as string) ?? entry.recordId ?? '',
-            data: parsedData,
-            timestamp: entry.timestamp,
-            edgeNodeId: (dbEntry.edge_node_id as string) ?? entry.edgeNodeId ?? '',
-            status: entry.status === 'syncing' ? 'pending' : entry.status, // Reset syncing to pending
-            checksum: entry.checksum,
-            attempts: entry.attempts,
-            lastAttempt: (dbEntry.last_attempt as string) ?? entry.lastAttempt ?? null,
-            error: entry.error
-          };
-        });
+        this.syncQueue = result.data.map((entry) => ({
+          id: entry.id,
+          operation: entry.operation,
+          table: entry.table,
+          recordId: (entry as unknown as Record<string, unknown>).record_id as string ?? entry.recordId,
+          data: entry.data,
+          timestamp: entry.timestamp,
+          edgeNodeId: (entry as unknown as Record<string, unknown>).edge_node_id as string ?? entry.edgeNodeId,
+          status: entry.status === 'syncing' ? 'pending' : entry.status, // Reset syncing to pending
+          checksum: entry.checksum,
+          attempts: entry.attempts,
+          lastAttempt: (entry as unknown as Record<string, unknown>).last_attempt as string ?? entry.lastAttempt,
+          error: entry.error
+        }));
 
         logger.info(
           { pendingCount: this.syncQueue.length },

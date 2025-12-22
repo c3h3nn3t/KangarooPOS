@@ -9,24 +9,27 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerPaymentRoutes } from '../payments';
 
-// Mock PaymentService
-const mockPaymentService = {
-  searchPayments: vi.fn(),
-  getPaymentById: vi.fn(),
-  getPaymentsForOrder: vi.fn(),
-  processPayment: vi.fn(),
-  voidPayment: vi.fn(),
-  getTotalPaid: vi.fn(),
-  getRemainingBalance: vi.fn(),
-  isOrderFullyPaid: vi.fn(),
-  searchRefunds: vi.fn(),
-  getRefundById: vi.fn(),
-  getRefundsForOrder: vi.fn(),
-  createRefund: vi.fn(),
-  approveRefund: vi.fn(),
-  processRefund: vi.fn(),
-  cancelRefund: vi.fn()
-};
+// Mock PaymentService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockPaymentService } = vi.hoisted(() => {
+  const mock = {
+    searchPayments: vi.fn(),
+    getPaymentById: vi.fn(),
+    getPaymentsForOrder: vi.fn(),
+    processPayment: vi.fn(),
+    voidPayment: vi.fn(),
+    getTotalPaid: vi.fn(),
+    getRemainingBalance: vi.fn(),
+    isOrderFullyPaid: vi.fn(),
+    searchRefunds: vi.fn(),
+    getRefundById: vi.fn(),
+    getRefundsForOrder: vi.fn(),
+    createRefund: vi.fn(),
+    approveRefund: vi.fn(),
+    processRefund: vi.fn(),
+    cancelRefund: vi.fn()
+  };
+  return { mockPaymentService: mock };
+});
 
 vi.mock('../../../services/payments/payment.service', () => ({
   PaymentService: vi.fn(() => mockPaymentService)

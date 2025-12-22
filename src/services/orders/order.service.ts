@@ -1,4 +1,5 @@
 import type { SelectOptions } from '../../db/types';
+import type { DatabaseAdapter } from '../../db/types';
 import type {
   Order,
   OrderItem,
@@ -86,9 +87,9 @@ export interface OrderSearchInput {
 export class OrderService extends BaseService {
   private productService: ProductService;
 
-  constructor() {
-    super();
-    this.productService = new ProductService();
+  constructor(databaseAdapter?: DatabaseAdapter) {
+    super(databaseAdapter);
+    this.productService = new ProductService(databaseAdapter);
   }
 
   // ===========================================================================

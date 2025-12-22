@@ -9,18 +9,21 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerCustomerRoutes } from '../customers';
 
-// Mock CustomerService
-const mockCustomerService = {
-  getCustomers: vi.fn(),
-  getCustomerById: vi.fn(),
-  searchCustomers: vi.fn(),
-  createCustomer: vi.fn(),
-  updateCustomer: vi.fn(),
-  getLoyaltyAccount: vi.fn(),
-  createLoyaltyAccount: vi.fn(),
-  adjustLoyaltyPoints: vi.fn(),
-  getLoyaltyTransactions: vi.fn()
-};
+// Mock CustomerService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockCustomerService } = vi.hoisted(() => {
+  const mock = {
+    getCustomers: vi.fn(),
+    getCustomerById: vi.fn(),
+    searchCustomers: vi.fn(),
+    createCustomer: vi.fn(),
+    updateCustomer: vi.fn(),
+    getLoyaltyAccount: vi.fn(),
+    createLoyaltyAccount: vi.fn(),
+    adjustLoyaltyPoints: vi.fn(),
+    getLoyaltyTransactions: vi.fn()
+  };
+  return { mockCustomerService: mock };
+});
 
 vi.mock('../../../services/customers/customer.service', () => ({
   CustomerService: vi.fn(() => mockCustomerService)

@@ -144,7 +144,7 @@ export function registerProductRoutes(router: Router): void {
       const product = await productService.getProductByBarcode(barcode, accountId);
 
       if (!product) {
-        res.json({ success: true, data: null }, 200);
+        successResponse(res, null, 200, { requestId: req.requestId });
         return;
       }
 

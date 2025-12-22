@@ -1,4 +1,5 @@
 import type { SelectOptions } from '../../db/types';
+import type { DatabaseAdapter } from '../../db/types';
 import type {
   Payment,
   PaymentStatus,
@@ -75,9 +76,9 @@ export interface RefundSearchInput {
 export class PaymentService extends BaseService {
   private orderService: OrderService;
 
-  constructor() {
-    super();
-    this.orderService = new OrderService();
+  constructor(databaseAdapter?: DatabaseAdapter) {
+    super(databaseAdapter);
+    this.orderService = new OrderService(databaseAdapter);
   }
 
   // ===========================================================================

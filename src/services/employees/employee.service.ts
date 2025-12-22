@@ -88,11 +88,11 @@ export class EmployeeService extends BaseService {
     const result = await this.db.selectOne<Employee>('employees', id);
 
     if (result.error || !result.data) {
-      throw new NotFoundError('Employee not found');
+      throw new NotFoundError('Employee', id);
     }
 
     if (result.data.account_id !== accountId) {
-      throw new NotFoundError('Employee not found');
+      throw new NotFoundError('Employee', id);
     }
 
     // Remove sensitive data
@@ -109,11 +109,11 @@ export class EmployeeService extends BaseService {
     const result = await this.db.selectOne<Employee>('employees', id);
 
     if (result.error || !result.data) {
-      throw new NotFoundError('Employee not found');
+      throw new NotFoundError('Employee', id);
     }
 
     if (result.data.account_id !== accountId) {
-      throw new NotFoundError('Employee not found');
+      throw new NotFoundError('Employee', id);
     }
 
     return result.data;
@@ -451,10 +451,10 @@ export class EmployeeService extends BaseService {
         storeId
       );
       if (storeResult.error || !storeResult.data) {
-        throw new NotFoundError('Store not found');
+        throw new NotFoundError('Store', storeId);
       }
       if (storeResult.data.account_id !== accountId) {
-        throw new NotFoundError('Store not found');
+        throw new NotFoundError('Store', storeId);
       }
     }
 

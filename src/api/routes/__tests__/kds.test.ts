@@ -9,24 +9,27 @@ import {
 } from '../../__tests__/helpers/mock-router';
 import { registerKdsRoutes } from '../kds';
 
-// Mock KdsService
-const mockKdsService = {
-  getTickets: vi.fn(),
-  getActiveTickets: vi.fn(),
-  getTicketById: vi.fn(),
-  getTicketByOrderId: vi.fn(),
-  createTicketFromOrder: vi.fn(),
-  updateTicketStatus: vi.fn(),
-  startTicket: vi.fn(),
-  bumpTicket: vi.fn(),
-  recallTicket: vi.fn(),
-  cancelTicket: vi.fn(),
-  updateItemStatus: vi.fn(),
-  updatePriority: vi.fn(),
-  setEstimatedTime: vi.fn(),
-  getTicketStats: vi.fn(),
-  getTicketsByStation: vi.fn()
-};
+// Mock KdsService - use vi.hoisted() to define before vi.mock() hoisting
+const { mockKdsService } = vi.hoisted(() => {
+  const mock = {
+    getTickets: vi.fn(),
+    getActiveTickets: vi.fn(),
+    getTicketById: vi.fn(),
+    getTicketByOrderId: vi.fn(),
+    createTicketFromOrder: vi.fn(),
+    updateTicketStatus: vi.fn(),
+    startTicket: vi.fn(),
+    bumpTicket: vi.fn(),
+    recallTicket: vi.fn(),
+    cancelTicket: vi.fn(),
+    updateItemStatus: vi.fn(),
+    updatePriority: vi.fn(),
+    setEstimatedTime: vi.fn(),
+    getTicketStats: vi.fn(),
+    getTicketsByStation: vi.fn()
+  };
+  return { mockKdsService: mock };
+});
 
 vi.mock('../../../services/kds/kds.service', () => ({
   KdsService: vi.fn(() => mockKdsService)

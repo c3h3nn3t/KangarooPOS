@@ -82,11 +82,11 @@ export class CustomerService extends BaseService {
     const result = await this.db.selectOne<Customer>('customers', id);
 
     if (result.error || !result.data) {
-      throw new NotFoundError('Customer not found');
+      throw new NotFoundError('Customer', id);
     }
 
     if (result.data.account_id !== accountId) {
-      throw new NotFoundError('Customer not found');
+      throw new NotFoundError('Customer', id);
     }
 
     return result.data;
@@ -323,7 +323,7 @@ export class CustomerService extends BaseService {
     );
 
     if (loyaltyResult.error || !loyaltyResult.data) {
-      throw new NotFoundError('Loyalty account not found');
+      throw new NotFoundError('LoyaltyAccount', input.loyalty_account_id);
     }
 
     const loyaltyAccount = loyaltyResult.data;

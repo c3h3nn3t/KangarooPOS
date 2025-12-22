@@ -85,21 +85,37 @@ export function createInMemoryDb(): InMemoryDatabaseAdapter {
           data.sort((a, b) => {
             const aVal = (a as Record<string, unknown>)[order.column];
             const bVal = (b as Record<string, unknown>)[order.column];
-            const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+            // Type-safe comparison for sorting
+            let cmp = 0;
+            if (aVal === bVal) {
+              cmp = 0;
+            } else if (aVal == null) {
+              cmp = -1;
+            } else if (bVal == null) {
+              cmp = 1;
+            } else {
+              // Convert to comparable types for sorting
+              const aStr = String(aVal);
+              const bStr = String(bVal);
+              cmp = aStr < bStr ? -1 : aStr > bStr ? 1 : 0;
+            }
             return order.direction === 'desc' ? -cmp : cmp;
           });
         }
       }
 
+      // Calculate total count before pagination
+      const totalCount = data.length;
+
       // Apply pagination
-      if (options?.offset) {
+      if (options?.offset !== undefined) {
         data = data.slice(options.offset);
       }
-      if (options?.limit) {
+      if (options?.limit !== undefined) {
         data = data.slice(0, options.limit);
       }
 
-      return { data, count: data.length };
+      return { data, count: totalCount };
     },
 
     async selectOne<T>(table: string, id: string): Promise<SingleResult<T>> {
