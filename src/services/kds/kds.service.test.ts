@@ -70,7 +70,8 @@ describe('KdsService', () => {
       mockDb.selectOne.mockResolvedValue({ data: mockOrder, error: null });
       mockDb.select
         .mockResolvedValueOnce({ data: [], error: null }) // No existing ticket
-        .mockResolvedValueOnce({ data: mockOrderItems, error: null }); // Order items
+        .mockResolvedValueOnce({ data: mockOrderItems, error: null }) // Order items
+        .mockResolvedValueOnce({ data: [], error: null }); // generateTicketNumber query
       mockDb.insert.mockResolvedValue({
         data: {
           id: ticketId,

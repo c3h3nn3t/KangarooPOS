@@ -1,0 +1,17 @@
+{
+  "name": "@kangaroopos/cursor-rules-cli",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Utility to install and update the canonical .cursorrules for KangarooPOS projects",
+  "bin": {
+    "pos-cursor-rules": "bin/pos-cursor-rules.js"
+  },
+  "type": "commonjs",
+  "files": [
+    "bin",
+    "templates"
+  ],
+  "scripts": {
+    "check": "node bin/pos-cursor-rules.js check"
+  }
+}

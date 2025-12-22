@@ -47,7 +47,7 @@ describe('SyncService', () => {
   const conflictId = 'conflict-123';
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     service = new SyncService();
     // Reset online status
     (db as { isOnline: boolean }).isOnline = true;
@@ -276,6 +276,10 @@ describe('SyncService', () => {
       (cloudDb.insert as ReturnType<typeof vi.fn>).mockResolvedValue({
         data: null,
         error: 'Insert failed'
+      });
+      (edgeDb.selectOne as ReturnType<typeof vi.fn>).mockResolvedValue({
+        data: mockEntry,
+        error: null
       });
       (edgeDb.update as ReturnType<typeof vi.fn>).mockResolvedValue({
         data: { ...mockEntry, status: 'failed' },
@@ -563,10 +567,12 @@ describe('SyncService', () => {
     ];
 
     it('should return sync statistics', async () => {
-      (edgeDb.select as ReturnType<typeof vi.fn>).mockResolvedValue({
-        data: mockEntries,
-        error: null
-      });
+      (edgeDb.select as ReturnType<typeof vi.fn>).mockImplementation(() =>
+        Promise.resolve({
+          data: mockEntries,
+          error: null
+        })
+      );
 
       const result = await service.getSyncStats(accountId);
 

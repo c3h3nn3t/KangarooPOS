@@ -1,0 +1,1092 @@
+# KangarooPOS - Cursor Rules for Codebase Integrity
+
+## Project Context
+KangarooPOS is an offline-first Point of Sale system with hybrid cloud/edge database architecture.
+- **Stack**: Node.js 20 + TypeScript 5.9, Supabase (PostgreSQL), SQLite (better-sqlite3)
+- **Architecture**: Hybrid Database Adapter Pattern, Service Layer, Custom Router
+- **Code Quality**: Biome (linting/formatting), Vitest (testing), Pino (logging), Zod (validation)
+
+---
+
+## Tech Stack & Dependency Management
+
+### Runtime & Language
+- **Node.js**: Requires Node.js 20+ (LTS recommended)
+  - **Module System**: CommonJS (`"type": "commonjs"`)
+  - **Target**: ES2022 (configured in `tsconfig.json`)
+  - **Best Practice**: Use Node.js 20.x LTS for production. Ensure `engines` field in `package.json` specifies version requirement.
+
+### TypeScript
+- **Version**: `^5.9.3` (TypeScript 5.9.x)
+  - **Status**: Latest stable 5.x release (as of 2025)
+  - **Configuration**: Strict mode enabled, ES2022 target, CommonJS modules
+  - **Best Practices**:
+    - **ALWAYS** use strict mode (`"strict": true` in `tsconfig.json`)
+    - **ALWAYS** enable `skipLibCheck: true` for faster compilation
+    - **ALWAYS** use path aliases (`@/*`) for cleaner imports
+    - **ALWAYS** generate declaration maps (`declarationMap: true`) for better IDE support
+    - **NEVER** use `any` - TypeScript 5.9 has improved type inference, leverage it
+    - **ALWAYS** use `satisfies` operator for type-safe object literals (TypeScript 4.9+)
+    - **ALWAYS** use `as const` for literal types in Zod schemas
+
+### Database & Storage
+
+#### Supabase Client
+- **Package**: `@supabase/supabase-js`
+- **Version**: `^2.87.1` (Supabase JS v2.87.x)
+  - **Status**: Recent stable release
+  - **Best Practices**:
+    - **ALWAYS** use Row Level Security (RLS) policies - Supabase enforces RLS at database level
+    - **ALWAYS** handle connection errors gracefully - Supabase client may fail silently
+    - **ALWAYS** use `.single()` for single row queries to get proper error handling
+    - **ALWAYS** check for `error` property in responses before accessing `data`
+    - **ALWAYS** use `.from()` with explicit table names (never dynamic table names from user input)
+    - **ALWAYS** use `.select()` with explicit columns for security and performance
+    - **NEVER** expose Supabase service role key in client-side code
+    - **ALWAYS** use environment variables for Supabase URL and anon key
+    - **Best Practice**: Use Supabase's realtime subscriptions sparingly - they can impact performance
+    - **Best Practice**: Batch operations when possible - Supabase supports batch inserts/updates
+
+#### SQLite (Edge Database)
+- **Package**: `better-sqlite3`
+- **Version**: `^11.7.0` (better-sqlite3 v11.7.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** use prepared statements for repeated queries (performance)
+    - **ALWAYS** use transactions for multi-step operations (ACID guarantees)
+    - **ALWAYS** handle database locking - better-sqlite3 uses synchronous API, be careful with concurrent access
+    - **ALWAYS** use WAL mode for better concurrency: `PRAGMA journal_mode=WAL`
+    - **ALWAYS** set appropriate busy timeout: `PRAGMA busy_timeout=5000`
+    - **ALWAYS** use `.serialize()` for complex queries to ensure atomic execution
+    - **NEVER** use dynamic SQL from user input - always use parameterized queries
+    - **Best Practice**: Close database connections properly in cleanup handlers
+    - **Best Practice**: Use connection pooling if multiple services access edge database
+    - **Performance**: better-sqlite3 is synchronous - avoid blocking operations in hot paths
+    - **Note**: better-sqlite3 requires native compilation - ensure build tools are available
+
+### Validation & Schema
+
+#### Zod
+- **Package**: `zod`
+- **Version**: `^3.24.2` (Zod v3.24.x)
+  - **Status**: Latest stable 3.x release
+  - **Best Practices**:
+    - **ALWAYS** use Zod schemas for all external inputs (request body, query params, path params)
+    - **ALWAYS** use `.parse()` in route handlers (throws on validation failure)
+    - **ALWAYS** use `.safeParse()` when validation errors should be handled gracefully
+    - **ALWAYS** use `z.coerce` for type coercion (e.g., `z.coerce.number()` for query params)
+    - **ALWAYS** use `as const` for literal types: `z.literal('active' as const)`
+    - **ALWAYS** define schemas close to usage (co-locate with route handlers)
+    - **ALWAYS** use `.refine()` for complex validation rules (e.g., date ranges, conditional validation)
+    - **ALWAYS** export schemas for reuse and testing
+    - **Best Practice**: Use `.describe()` for better error messages
+    - **Best Practice**: Create base schemas and extend them (DRY principle)
+    - **Performance**: Zod is fast, but avoid deeply nested schemas in hot paths
+    - **Type Safety**: Use `z.infer<typeof schema>` to extract TypeScript types from Zod schemas
+
+### Authentication & Security
+
+#### bcrypt
+- **Package**: `bcrypt`
+- **Version**: `^6.0.0` (bcrypt v6.x)
+  - **Status**: Latest major version (breaking changes from v5.x)
+  - **Best Practices**:
+    - **ALWAYS** use async API (`bcrypt.hash()`, `bcrypt.compare()`) - v6.x is async-first
+    - **ALWAYS** use salt rounds of 10-12 for production (balance between security and performance)
+    - **ALWAYS** handle errors - bcrypt operations can fail
+    - **NEVER** store plain text passwords - always hash before storage
+    - **NEVER** use synchronous bcrypt in request handlers (blocks event loop)
+    - **Best Practice**: Use `bcrypt.compare()` for password verification (constant-time comparison)
+    - **Security**: bcrypt v6.x has improved security - ensure you're not using deprecated APIs
+    - **Migration Note**: If upgrading from bcrypt v5.x, check for breaking changes in async API
+
+### Logging & Observability
+
+#### Pino
+- **Package**: `pino`
+- **Version**: `^9.6.0` (Pino v9.6.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** use structured logging - pass objects as first parameter: `logger.info({ accountId, orderId }, 'message')`
+    - **ALWAYS** use appropriate log levels: `error`, `warn`, `info`, `debug`
+    - **ALWAYS** include context in log messages (accountId, userId, requestId, etc.)
+    - **NEVER** log sensitive data (passwords, tokens, full request bodies)
+    - **NEVER** use string interpolation - use structured logging: `logger.info({ userId }, 'User logged in')` not `logger.info(\`User ${userId} logged in\`)`
+    - **Best Practice**: Use child loggers for request-scoped logging: `logger.child({ requestId })`
+    - **Best Practice**: Configure log levels via environment variables
+    - **Performance**: Pino is extremely fast - use it for all logging needs
+    - **Production**: Configure Pino with appropriate transports (file, remote logging service)
+
+### Utilities
+
+#### UUID
+- **Package**: `uuid`
+- **Version**: `^11.1.0` (uuid v11.x)
+  - **Status**: Latest major version (v11.x has breaking changes from v10.x)
+  - **Best Practices**:
+    - **ALWAYS** use `uuid.v4()` for random UUIDs (most common use case)
+    - **ALWAYS** use `uuid.v7()` for time-ordered UUIDs if you need sortable IDs (UUID v7 is new in v11.x)
+    - **ALWAYS** validate UUIDs before database operations (use Zod schema: `z.string().uuid()`)
+    - **NEVER** use `uuid.v1()` unless you need MAC address-based UUIDs (privacy concerns)
+    - **Best Practice**: Use UUID v7 for primary keys if you need chronological ordering
+    - **Migration Note**: uuid v11.x requires Node.js 18+ - ensure compatibility
+    - **Type Safety**: Use `@types/uuid` v10.x (compatible with uuid v11.x)
+
+#### dotenv
+- **Package**: `dotenv`
+- **Version**: `^17.2.3` (dotenv v17.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** load dotenv early in application startup (before other config)
+    - **ALWAYS** validate environment variables with Zod schemas (see `src/config/env.ts`)
+    - **ALWAYS** provide default values for non-critical environment variables
+    - **NEVER** commit `.env` files to version control
+    - **ALWAYS** provide `.env.example` with all required variables (without values)
+    - **Best Practice**: Use `dotenv/config` import for automatic loading
+    - **Best Practice**: Validate all environment variables at startup (fail fast)
+
+### Development Tools
+
+#### Biome
+- **Package**: `@biomejs/biome`
+- **Version**: `^1.9.4` (Biome v1.9.x)
+  - **Status**: Latest stable release
+  - **Best Practices**:
+    - **ALWAYS** run `biome check --write` before committing (format + lint)
+    - **ALWAYS** use Biome's organize imports feature (`organizeImports.enabled: true`)
+    - **ALWAYS** follow Biome's recommended rules (`rules.recommended: true`)
+    - **ALWAYS** configure Biome to match project style (single quotes, semicolons, 2-space indent)
+    - **NEVER** disable Biome rules without justification
+    - **Best Practice**: Use Biome instead of ESLint + Prettier (faster, single tool)
+    - **Best Practice**: Configure Biome to auto-fix on save in IDE
+    - **Performance**: Biome is significantly faster than ESLint + Prettier
+    - **Configuration**: Biome config is in `biome.json` - keep it synchronized with team preferences
+
+#### Vitest
+- **Package**: `vitest`
+- **Version**: `^3.0.0` (Vitest v3.x)
+  - **Status**: Latest major version
+  - **Best Practices**:
+    - **ALWAYS** write tests for new services and critical flows
+    - **ALWAYS** use `describe` blocks to organize tests
+    - **ALWAYS** use `it` or `test` for individual test cases
+    - **ALWAYS** mock database adapters in unit tests (don't hit real database)
+    - **ALWAYS** use `vi.mock()` for mocking modules
+    - **ALWAYS** test error cases, not just happy paths
+    - **Best Practice**: Use `test.concurrent()` for independent tests (faster execution)
+    - **Best Practice**: Use `beforeEach`/`afterEach` for test setup/teardown
+    - **Best Practice**: Configure coverage thresholds in `vitest.config.ts`
+    - **Performance**: Vitest is fast - use it for all testing needs
+    - **Configuration**: Vitest config supports path aliases - ensure they match `tsconfig.json`
+
+#### TypeScript Development Tools
+- **ts-node**: `^10.9.2` - TypeScript execution for Node.js
+- **ts-node-dev**: `^2.0.0` - Development server with hot reload
+  - **Best Practices**:
+    - **ALWAYS** use `ts-node-dev` for development (faster than `ts-node` + `nodemon`)
+    - **ALWAYS** use `--transpile-only` flag for faster compilation (skip type checking)
+    - **ALWAYS** run `tsc --noEmit` separately for type checking (`typecheck` script)
+    - **Best Practice**: Use `--respawn` flag to auto-restart on file changes
+    - **Performance**: `ts-node-dev` is faster than alternatives for development
+
+### Type Definitions
+
+#### @types/node
+- **Version**: `^24.10.2` (Node.js v24 types)
+  - **Status**: Matches Node.js 20+ runtime
+  - **Best Practice**: Keep @types/node version aligned with Node.js runtime version
+
+#### @types/bcrypt
+- **Version**: `^6.0.0`
+  - **Status**: Matches bcrypt v6.x
+  - **Best Practice**: Keep @types packages aligned with their corresponding runtime packages
+
+#### @types/better-sqlite3
+- **Version**: `^7.6.12`
+  - **Status**: Latest stable types
+  - **Best Practice**: Keep @types packages updated for better TypeScript support
+
+#### @types/uuid
+- **Version**: `^10.0.0`
+  - **Status**: Compatible with uuid v11.x
+  - **Best Practice**: @types/uuid v10.x works with uuid v11.x (no breaking changes in types)
+
+### Dependency Management Best Practices
+
+#### Version Pinning Strategy
+- **Production Dependencies**: Use `^` (caret) for minor/patch updates (e.g., `^2.87.1`)
+  - Allows automatic updates for bug fixes and minor features
+  - Prevents breaking changes from major version updates
+- **Critical Dependencies**: Consider exact versions for security-critical packages (e.g., `bcrypt`, `uuid`)
+- **Dev Dependencies**: Use `^` for all dev dependencies (less critical, can update freely)
+
+#### Security & Updates
+- **ALWAYS** run `npm audit` regularly to check for security vulnerabilities
+- **ALWAYS** run `npm outdated` to identify outdated packages
+- **ALWAYS** update dependencies in a controlled manner (test after updates)
+- **ALWAYS** review changelogs for breaking changes before major version updates
+- **NEVER** update all dependencies at once without testing
+- **Best Practice**: Use `npm audit fix` for automatic security fixes (review changes)
+- **Best Practice**: Pin exact versions for critical security packages if needed
+
+#### Lock Files
+- **ALWAYS** commit `package-lock.json` to version control
+- **ALWAYS** use `package-lock.json` for consistent installations
+- **NEVER** manually edit `package-lock.json`
+- **Best Practice**: Regenerate lock file after dependency updates: `npm install`
+
+#### Dependency Organization
+- **ALWAYS** separate `dependencies` (production) from `devDependencies` (development)
+- **ALWAYS** keep production dependencies minimal (only what's needed at runtime)
+- **ALWAYS** document why each dependency is needed (in code comments or README)
+- **NEVER** add dependencies without justification
+- **Best Practice**: Review dependencies periodically and remove unused packages
+
+#### Node.js Version Management
+- **ALWAYS** specify Node.js version requirement in `package.json`:
+  ```json
+  "engines": {
+    "node": ">=20.0.0"
+  }
+  ```
+- **ALWAYS** use Node.js LTS versions for production
+- **ALWAYS** test with the minimum required Node.js version
+- **Best Practice**: Use `.nvmrc` or `.node-version` file for local development
+
+### Version Compatibility Matrix
+
+| Package | Version | Node.js | TypeScript | Notes |
+|---------|---------|---------|------------|-------|
+| TypeScript | 5.9.3 | 18+ | - | Latest 5.x stable |
+| @supabase/supabase-js | 2.87.1 | 18+ | 4.7+ | Recent stable |
+| better-sqlite3 | 11.7.0 | 18+ | 4.7+ | Requires native build |
+| zod | 3.24.2 | 16+ | 4.1+ | Latest 3.x |
+| bcrypt | 6.0.0 | 18+ | 4.7+ | Breaking changes from v5 |
+| pino | 9.6.0 | 18+ | 4.7+ | Latest stable |
+| uuid | 11.1.0 | 18+ | 4.7+ | Breaking changes from v10 |
+| vitest | 3.0.0 | 18+ | 5.0+ | Latest major version |
+| biome | 1.9.4 | 18+ | 4.7+ | Latest stable |
+
+**Minimum Requirements**: Node.js 20+ (LTS), TypeScript 5.9+
+
+### Known Issues & Workarounds
+
+1. **better-sqlite3 Native Compilation**:
+   - Issue: Requires native compilation (C++ bindings)
+   - Workaround: Ensure build tools are installed (`node-gyp`, Python, C++ compiler)
+   - Docker: Use Node.js images with build tools or multi-stage builds
+
+2. **bcrypt v6.x Async API**:
+   - Issue: Breaking changes from v5.x (async-first)
+   - Workaround: Ensure all bcrypt calls use async/await
+   - Migration: Review all bcrypt usage when upgrading from v5.x
+
+3. **uuid v11.x Node.js Requirement**:
+   - Issue: Requires Node.js 18+
+   - Workaround: Ensure Node.js 20+ (project requirement)
+   - Migration: No issues if already on Node.js 20+
+
+4. **Supabase Client Error Handling**:
+   - Issue: Supabase client may return errors in response object
+   - Workaround: Always check `result.error` before accessing `result.data`
+   - Pattern: Use consistent error checking pattern across codebase
+
+### Dependency Update Checklist
+
+When updating dependencies:
+
+- [ ] Review changelog for breaking changes
+- [ ] Update `package.json` with new version
+- [ ] Run `npm install` to update `package-lock.json`
+- [ ] Run `npm audit` to check for security issues
+- [ ] Run `npm run typecheck` to verify TypeScript compatibility
+- [ ] Run `npm run lint` to check for new linting rules
+- [ ] Run `npm test` to verify tests still pass
+- [ ] Test critical flows manually (auth, sync, transactions)
+- [ ] Update documentation if API changes
+- [ ] Commit changes with clear message: `chore(deps): update {package} to v{version}`
+
+---
+
+## Core Principles
+
+### 1. Architecture Integrity
+- **ALWAYS** use the hybrid adapter (`db` from `@/db`) - NEVER directly import `cloudDb` or `edgeDb` in services/routes
+- **ALWAYS** extend `BaseService` for all service classes
+- **ALWAYS** use the custom router pattern - no Express/Hono imports
+- **NEVER** bypass the service layer - routes should only call services, never database directly
+- **NEVER** mix database adapters - one service = one adapter instance
+
+### 2. Type Safety
+- **ALWAYS** use TypeScript strict mode patterns
+- **ALWAYS** define explicit types for service inputs/outputs (use `interface`, not `type` for public APIs)
+- **ALWAYS** validate external inputs with Zod schemas in routes
+- **NEVER** use `any` - use `unknown` + type guards if needed
+- **ALWAYS** use `as const` for literal types in schemas
+
+### 3. Error Handling
+- **ALWAYS** use custom error classes from `@/utils/errors`
+- **ALWAYS** throw errors, never return error objects (except database adapter results)
+- **ALWAYS** include context in error messages (resource name, ID, operation)
+- **NEVER** throw raw strings or Error instances - use AppError subclasses
+- **ALWAYS** handle database errors and convert to domain errors in services
+
+### 4. Database Patterns
+- **ALWAYS** use `db` (hybrid adapter) in services - it handles online/offline automatically
+- **ALWAYS** check `result.error` before using `result.data` from database operations
+- **ALWAYS** use database-level pagination (limit/offset in SelectOptions) - NEVER fetch all and paginate in memory
+- **ALWAYS** use transactions for multi-step operations (orders, payments, inventory transfers)
+- **NEVER** assume transaction support in cloud adapter - it's simulated, not ACID
+- **ALWAYS** handle offline scenarios - check `db.isOnline` when needed for user feedback
+
+### 5. Service Layer Patterns
+- **ALWAYS** extend `BaseService` and use `this.db` (never import db directly)
+- **ALWAYS** extract account_id/user_id from request in route handlers, pass to services
+- **ALWAYS** return domain objects, never raw database results
+- **ALWAYS** validate business rules in services, not routes
+- **ALWAYS** use descriptive method names: `getInventory`, `createOrder`, `adjustStock`
+- **NEVER** expose database adapter types in service public APIs
+
+### 6. Route Patterns
+- **ALWAYS** use middleware array: `[authenticate(), requireRole(...), validateBody(schema)]`
+- **ALWAYS** extract `accountId` from `req.accountId!` (set by auth middleware)
+- **ALWAYS** use `successResponse()` or `paginatedResponse()` from `@/api/response`
+- **ALWAYS** validate inputs with Zod schemas before service calls
+- **ALWAYS** handle errors by throwing - router will catch and format
+- **NEVER** put business logic in route handlers - delegate to services
+
+### 7. Sync & Offline Patterns
+- **ALWAYS** use hybrid adapter - it automatically queues writes for sync when offline
+- **ALWAYS** check `db.isOnline` status for user-facing messages
+- **ALWAYS** use sync service for manual sync operations
+- **ALWAYS** handle sync conflicts with proper resolution strategies
+- **NEVER** write to cloud-only tables when offline (products, categories, etc.)
+
+### 8. Validation & Security
+- **ALWAYS** validate all external inputs with Zod schemas
+- **ALWAYS** use `validateBody`, `validateQuery`, `validateParams` middleware
+- **ALWAYS** check account_id isolation - users can only access their account's data
+- **ALWAYS** use RBAC middleware (`requireRole`) for protected routes
+- **ALWAYS** use `authenticate()` or `optionalAuth()` middleware
+- **NEVER** trust client input - validate everything
+
+### 9. Logging & Observability
+- **ALWAYS** use structured logging with `logger` from `@/utils/logger`
+- **ALWAYS** include context: `logger.info({ accountId, orderId }, 'Order created')`
+- **ALWAYS** log errors with full context: `logger.error({ error, requestId }, 'Operation failed')`
+- **ALWAYS** use appropriate log levels: `error`, `warn`, `info`, `debug`
+- **NEVER** log sensitive data (passwords, tokens, full request bodies)
+
+### 10. Testing Requirements
+- **ALWAYS** write tests for new services (unit tests)
+- **ALWAYS** write tests for critical flows (sync, transactions, auth)
+- **ALWAYS** use Vitest - test files: `*.test.ts` or `*.spec.ts`
+- **ALWAYS** test error cases, not just happy paths
+- **ALWAYS** mock database adapters in unit tests
+- **NEVER** commit code without tests for new business logic
+
+### 11. Performance
+- **ALWAYS** use database-level pagination (limit/offset in SelectOptions)
+- **ALWAYS** use indexes for frequently queried columns (account_id, store_id, etc.)
+- **ALWAYS** batch operations when possible (insertMany, bulk updates)
+- **ALWAYS** avoid N+1 queries - use joins or batch selects
+- **NEVER** fetch all records and filter in memory
+- **ALWAYS** consider caching for frequently accessed, rarely changed data
+
+### 12. Code Style
+- **ALWAYS** follow Biome configuration (single quotes, semicolons, 2-space indent)
+- **ALWAYS** use `export` for public APIs, avoid default exports
+- **ALWAYS** organize imports: external → internal, grouped by type
+- **ALWAYS** use JSDoc comments for public service methods
+- **ALWAYS** use descriptive variable names - avoid abbreviations
+- **NEVER** use `// @ts-ignore` or `// @ts-expect-error` without explanation
+
+### 13. File Structure
+```
+src/
+  api/
+    middleware/     # Request middleware (auth, validation, rate-limit)
+    routes/         # Route handlers (thin, delegate to services)
+    response.ts     # Response helpers
+    router.ts       # Custom router
+  auth/             # Authentication logic
+  config/           # Configuration (env, database clients)
+  db/               # Database adapters (cloud, edge, hybrid)
+  services/         # Business logic (one folder per domain)
+    {domain}/
+      {domain}.service.ts
+      index.ts
+  types/            # TypeScript types
+  utils/            # Utilities (logger, errors, datetime, etc.)
+```
+
+### 13.1. Complete Directory Structure & File Reference
+
+This section provides a comprehensive reference of all source files and folders in the KangarooPOS project.
+
+#### Root Directory
+```
+KangarooPOS/
+├── src/                    # Source code (TypeScript)
+├── dist/                   # Compiled JavaScript output (generated)
+├── supabase/              # Supabase migrations and schema
+├── node_modules/          # Dependencies (generated)
+├── package.json           # Project dependencies and scripts
+├── package-lock.json      # Dependency lock file
+├── tsconfig.json          # TypeScript configuration
+├── vitest.config.ts       # Vitest test configuration
+├── biome.json             # Biome linting/formatting configuration
+├── Dockerfile             # Docker container configuration
+├── docker-compose.yml     # Docker Compose configuration
+├── IMPLEMENTATION_STATUS.md  # Project status documentation
+├── test-inventory-transactions.sh  # Test script
+└── test-sync-stats.sh     # Test script
+```
+
+#### Source Directory (`src/`)
+
+**Entry Point:**
+- `src/index.ts` - Application entry point, initializes server and routes
+
+**API Layer (`src/api/`):**
+- `src/api/router.ts` - Custom router implementation (replaces Express/Hono)
+- `src/api/response.ts` - Response helper functions (`successResponse`, `paginatedResponse`, `errorResponse`)
+- `src/api/middleware/` - Request middleware
+  - `src/api/middleware/index.ts` - Middleware exports
+  - `src/api/middleware/cors.ts` - CORS configuration
+  - `src/api/middleware/rateLimit.ts` - Rate limiting middleware
+  - `src/api/middleware/validation.ts` - Input validation middleware (`validateBody`, `validateQuery`, `validateParams`)
+- `src/api/routes/` - Route handlers (thin layer, delegates to services)
+  - `src/api/routes/index.ts` - Route registration and aggregation
+  - `src/api/routes/v1/index.ts` - API v1 route grouping
+  - `src/api/routes/health.ts` - Health check endpoint
+  - `src/api/routes/customers.ts` - Customer routes (`registerCustomerRoutes`)
+  - `src/api/routes/employees.ts` - Employee routes (`registerEmployeeRoutes`)
+  - `src/api/routes/inventory.ts` - Inventory routes (`registerInventoryRoutes`)
+  - `src/api/routes/orders.ts` - Order routes (`registerOrderRoutes`)
+  - `src/api/routes/payments.ts` - Payment routes (`registerPaymentRoutes`)
+  - `src/api/routes/products.ts` - Product routes (`registerProductRoutes`)
+  - `src/api/routes/reports.ts` - Report routes (`registerReportRoutes`)
+  - `src/api/routes/shifts.ts` - Shift routes (`registerShiftRoutes`)
+  - `src/api/routes/kds.ts` - Kitchen Display System routes (`registerKdsRoutes`)
+  - `src/api/routes/sync.ts` - Sync routes (`registerSyncRoutes`)
+
+**Authentication (`src/auth/`):**
+- `src/auth/index.ts` - Auth module exports
+- `src/auth/middleware.ts` - Authentication middleware (`authenticate`, `optionalAuth`, `requireRole`)
+- `src/auth/routes.ts` - Authentication routes (login, register, token refresh)
+
+**Configuration (`src/config/`):**
+- `src/config/index.ts` - Configuration exports
+- `src/config/env.ts` - Environment variable validation and loading
+- `src/config/database.ts` - Database client initialization and configuration
+
+**Database Layer (`src/db/`):**
+- `src/db/index.ts` - Database exports (exports hybrid adapter as `db`)
+- `src/db/types.ts` - Database adapter type definitions (`SelectOptions`, `WhereClause`, etc.)
+- `src/db/hybrid-adapter.ts` - **CRITICAL**: Hybrid adapter (cloud/edge switching, sync queueing)
+- `src/db/cloud-adapter.ts` - Supabase PostgreSQL adapter implementation
+- `src/db/edge-adapter.ts` - SQLite (better-sqlite3) adapter implementation
+- `src/db/edge-schema.ts` - SQLite schema definitions and migrations
+- `src/db/seed.ts` - Database seeding utilities
+
+**Services (`src/services/`):**
+- `src/services/base.service.ts` - **CRITICAL**: Base service class (all services extend this)
+- `src/services/index.ts` - Service exports
+
+**Domain Services (each in `src/services/{domain}/`):**
+- `src/services/customers/`
+  - `customer.service.ts` - `CustomerService` (customer CRUD, search)
+  - `index.ts` - Service exports
+- `src/services/employees/`
+  - `employee.service.ts` - `EmployeeService` (employee management, roles)
+  - `index.ts` - Service exports
+- `src/services/inventory/`
+  - `inventory.service.ts` - `InventoryService` (stock management, adjustments, transfers)
+  - `inventory.service.test.ts` - Unit tests
+  - `index.ts` - Service exports
+- `src/services/orders/`
+  - `order.service.ts` - `OrderService` (order creation, status updates, history)
+  - `order.service.test.ts` - Unit tests
+  - `index.ts` - Service exports
+- `src/services/payments/`
+  - `payment.service.ts` - `PaymentService` (payment processing, refunds)
+  - `payment.service.test.ts` - Unit tests
+  - `index.ts` - Service exports
+- `src/services/products/`
+  - `product.service.ts` - `ProductService` (product catalog, variants, pricing)
+  - `index.ts` - Service exports
+- `src/services/reports/`
+  - `report.service.ts` - `ReportService` (sales reports, analytics)
+  - `index.ts` - Service exports
+- `src/services/shifts/`
+  - `shift.service.ts` - `ShiftService` (shift management, clock in/out)
+  - `index.ts` - Service exports
+- `src/services/kds/`
+  - `kds.service.ts` - `KdsService` (kitchen display system, order status)
+  - `index.ts` - Service exports
+- `src/services/sync/`
+  - `sync.service.ts` - `SyncService` (sync operations, conflict resolution, stats)
+  - `index.ts` - Service exports
+
+**Types (`src/types/`):**
+- `src/types/index.ts` - Type exports
+- `src/types/api.ts` - API request/response types (`ApiRequest`, `ApiResponse`, `Router`)
+- `src/types/database.ts` - Database entity types (tables, columns, relationships)
+
+**Utilities (`src/utils/`):**
+- `src/utils/index.ts` - Utility exports
+- `src/utils/errors.ts` - **CRITICAL**: Custom error classes (`AppError`, `NotFoundError`, `ValidationError`, etc.)
+- `src/utils/logger.ts` - Structured logging (Pino logger instance)
+- `src/utils/agent-logger.ts` - Agent-specific logging utilities
+- `src/utils/money.ts` - Money/currency utilities (formatting, calculations)
+- `src/utils/datetime.ts` - Date/time utilities (formatting, timezone handling)
+- `src/utils/cache.ts` - Caching utilities (in-memory cache helpers)
+- `src/utils/idempotency.ts` - Idempotency key utilities
+
+#### Supabase Directory (`supabase/`)
+- `supabase/migrations/` - Database migration files
+  - `supabase/migrations/00001_initial_schema.sql` - Initial database schema
+  - `supabase/migrations/00002_rls_policies.sql` - Row Level Security policies
+
+#### Test Scripts (Root)
+- `test-inventory-transactions.sh` - Inventory transaction testing script
+- `test-sync-stats.sh` - Sync statistics testing script
+
+#### Important File Patterns
+
+**Service Files:**
+- Pattern: `src/services/{domain}/{domain}.service.ts`
+- Must extend `BaseService`
+- Must use `this.db` (hybrid adapter)
+- Must export service class and input/output interfaces
+- May include `{domain}.service.test.ts` for unit tests
+
+**Route Files:**
+- Pattern: `src/api/routes/{domain}.ts`
+- Must export `register{Domain}Routes(router: Router): void`
+- Must use middleware array pattern
+- Must delegate to services (no business logic)
+
+**Middleware Files:**
+- Pattern: `src/api/middleware/{name}.ts`
+- Must export middleware functions
+- Must be composable (return middleware function)
+
+**Database Adapter Files:**
+- `hybrid-adapter.ts` - **ALWAYS USE THIS** in services (via `this.db`)
+- `cloud-adapter.ts` - Supabase adapter (internal use only)
+- `edge-adapter.ts` - SQLite adapter (internal use only)
+- **NEVER** import `cloud-adapter` or `edge-adapter` directly in services/routes
+
+**Type Files:**
+- `types/api.ts` - API-related types (request, response, router)
+- `types/database.ts` - Database entity types
+- Use `interface` for public APIs, `type` for internal types
+
+**Utility Files:**
+- Each utility is self-contained
+- Export from `utils/index.ts` for convenience
+- Use structured logging from `utils/logger.ts`
+- Use custom errors from `utils/errors.ts`
+
+#### File Naming Conventions
+
+- **Services**: `{domain}.service.ts` (e.g., `inventory.service.ts`)
+- **Routes**: `{domain}.ts` (e.g., `inventory.ts`)
+- **Tests**: `{domain}.service.test.ts` or `{domain}.test.ts`
+- **Types**: `{domain}.ts` (e.g., `api.ts`, `database.ts`)
+- **Utils**: `{name}.ts` (e.g., `logger.ts`, `errors.ts`)
+- **Config**: `{name}.ts` (e.g., `env.ts`, `database.ts`)
+- **All files**: kebab-case for multi-word names
+
+#### Directory Organization Rules
+
+1. **Services**: One folder per domain, each with `{domain}.service.ts` and `index.ts`
+2. **Routes**: Flat structure in `api/routes/`, one file per domain
+3. **Middleware**: Flat structure in `api/middleware/`, one file per middleware type
+4. **Utils**: Flat structure, each utility in its own file
+5. **Types**: Flat structure, grouped by concern (api, database)
+6. **Tests**: Co-located with service files (same directory)
+
+#### Critical Files Reference
+
+**Must Understand Before Modifying:**
+- `src/db/hybrid-adapter.ts` - Core database abstraction
+- `src/services/base.service.ts` - Base class for all services
+- `src/api/router.ts` - Custom router implementation
+- `src/utils/errors.ts` - Error handling patterns
+
+**Must Follow Patterns:**
+- All services extend `BaseService` (see `base.service.ts`)
+- All routes use middleware array (see any route file)
+- All services use `this.db` (hybrid adapter, see `base.service.ts`)
+- All errors use custom error classes (see `utils/errors.ts`)
+
+**Migration Files:**
+- Always create new migration in `supabase/migrations/`
+- Use sequential numbering: `00003_{description}.sql`
+- Update `edge-schema.ts` when cloud schema changes
+
+### 14. Naming Conventions
+- **Services**: `{Domain}Service` (e.g., `InventoryService`, `OrderService`)
+- **Routes**: `register{Domain}Routes` (e.g., `registerInventoryRoutes`)
+- **Interfaces**: PascalCase (e.g., `GetInventoryInput`, `CreateOrderInput`)
+- **Files**: kebab-case (e.g., `inventory.service.ts`, `order.service.ts`)
+- **Constants**: UPPER_SNAKE_CASE (e.g., `CLOUD_ONLY_WRITE_TABLES`)
+- **Database tables**: snake_case (e.g., `order_items`, `sync_journal`)
+
+### 15. Database Schema Patterns
+- **ALWAYS** use UUID primary keys (`id UUID PRIMARY KEY`)
+- **ALWAYS** include `account_id` for multi-tenant tables
+- **ALWAYS** include `created_at` and `updated_at` timestamps
+- **ALWAYS** use `TIMESTAMPTZ` for timestamps
+- **ALWAYS** include `is_active` boolean for soft deletes
+- **ALWAYS** use foreign keys with appropriate CASCADE rules
+
+### 16. Transaction Patterns
+- **ALWAYS** use transactions for multi-step operations
+- **ALWAYS** handle transaction errors and rollback
+- **ALWAYS** be aware: cloud adapter transactions are simulated (not ACID)
+- **ALWAYS** test transaction rollback scenarios
+- **NEVER** nest transactions - use single transaction for entire operation
+
+### 17. Sync Patterns
+- **ALWAYS** let hybrid adapter handle sync queueing automatically
+- **ALWAYS** use sync service for manual sync operations
+- **ALWAYS** handle sync conflicts with proper resolution
+- **ALWAYS** test offline → online sync scenarios
+- **NEVER** manually manipulate sync_journal table
+
+### 18. Documentation
+- **ALWAYS** add JSDoc comments for public service methods
+- **ALWAYS** document complex business logic
+- **ALWAYS** document API endpoints (method, path, auth, params)
+- **ALWAYS** update README for new features
+- **NEVER** leave TODO comments without issue references
+
+### 19. Dependencies
+- **ALWAYS** use existing dependencies - avoid adding new ones without justification
+- **ALWAYS** check for security vulnerabilities: `npm audit`
+- **ALWAYS** pin dependency versions in package.json
+- **NEVER** add heavy frameworks (Express, NestJS) - use custom router
+- **NEVER** add ORMs (Prisma, TypeORM) - use adapter pattern
+
+### 20. Migration & Deployment
+- **ALWAYS** use Supabase migrations for schema changes
+- **ALWAYS** update edge schema when cloud schema changes
+- **ALWAYS** test migrations on staging first
+- **ALWAYS** include rollback scripts for critical migrations
+- **NEVER** modify production schema without migration
+
+---
+
+## Code Examples
+
+### ✅ CORRECT: Service Pattern
+```typescript
+// src/services/inventory/inventory.service.ts
+import { db } from '../../db';
+import { BaseService } from '../base.service';
+import { NotFoundError, ValidationError } from '../../utils/errors';
+
+export interface GetInventoryInput {
+  account_id: string;
+  store_id?: string;
+}
+
+export class InventoryService extends BaseService {
+  /**
+   * Get inventory records for an account
+   */
+  async getInventory(input: GetInventoryInput): Promise<Inventory[]> {
+    const where = [{ column: 'account_id', operator: '=' as const, value: input.account_id }];
+    if (input.store_id) {
+      where.push({ column: 'store_id', operator: '=' as const, value: input.store_id });
+    }
+
+    const result = await this.db.select<Inventory>('inventory', { where });
+    if (result.error) {
+      throw new Error(`Failed to fetch inventory: ${result.error}`);
+    }
+    return result.data;
+  }
+}
+```
+
+### ✅ CORRECT: Route Pattern
+```typescript
+// src/api/routes/inventory.ts
+import { authenticate, requireRole } from '../../auth/middleware';
+import { InventoryService } from '../../services/inventory/inventory.service';
+import { validateQuery } from '../middleware/validation';
+import { paginatedResponse } from '../response';
+import { z } from 'zod';
+
+const querySchema = z.object({
+  store_id: z.string().uuid().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50)
+});
+
+export function registerInventoryRoutes(router: Router): void {
+  router.get(
+    '/api/v1/inventory',
+    async (req: ApiRequest, res: ApiResponse) => {
+      const accountId = req.accountId!;
+      const query = querySchema.parse(req.query || {});
+
+      const result = await inventoryService.getInventory(
+        { account_id: accountId, store_id: query.store_id },
+        { limit: query.limit, offset: (query.page - 1) * query.limit }
+      );
+
+      paginatedResponse(res, result.data, result.count || 0, query.page, query.limit, {
+        requestId: req.requestId
+      });
+    },
+    [authenticate(), requireRole('owner', 'admin', 'manager'), validateQuery(querySchema)]
+  );
+}
+```
+
+### ❌ WRONG: Direct Database Access in Route
+```typescript
+// DON'T DO THIS
+router.get('/api/v1/inventory', async (req, res) => {
+  const result = await db.select('inventory', { where: [...] }); // ❌ Business logic in route
+  res.json(result);
+});
+```
+
+### ❌ WRONG: Using Cloud/Edge Adapters Directly
+```typescript
+// DON'T DO THIS
+import { cloudDb } from '@/db/cloud-adapter'; // ❌ Bypass hybrid adapter
+const result = await cloudDb.select('inventory', {});
+```
+
+### ❌ WRONG: Memory Pagination
+```typescript
+// DON'T DO THIS
+const all = await service.getInventory({ account_id }); // ❌ Fetches all
+const paginated = all.slice(start, start + limit); // ❌ Memory pagination
+```
+
+---
+
+## Checklist for New Features
+
+Before implementing any feature, ensure:
+
+- [ ] Service extends `BaseService` and uses `this.db`
+- [ ] Route uses middleware array with auth/validation
+- [ ] Input validation with Zod schemas
+- [ ] Error handling with custom error classes
+- [ ] Database-level pagination (if listing data)
+- [ ] Account isolation enforced
+- [ ] RBAC middleware applied
+- [ ] Structured logging with context
+- [ ] Unit tests written
+- [ ] Offline scenario considered (if applicable)
+- [ ] JSDoc comments for public methods
+- [ ] No direct database access in routes
+- [ ] No memory pagination
+- [ ] No `any` types
+- [ ] Biome formatting applied
+
+---
+
+## Enforcement
+
+When suggesting code changes:
+1. **ALWAYS** follow these rules strictly
+2. **ALWAYS** point out violations in code review
+3. **ALWAYS** suggest fixes that align with these patterns
+4. **ALWAYS** maintain consistency with existing codebase
+5. **NEVER** suggest breaking changes to architecture patterns
+6. **NEVER** suggest adding heavy dependencies
+7. **NEVER** suggest shortcuts that bypass service layer
+8. **NEVER** suggest memory pagination
+9. **ALWAYS** prioritize code integrity over speed
+10. **ALWAYS** ensure offline-first compatibility
+
+---
+
+## Quick Reference
+
+| Pattern | Rule |
+|---------|------|
+| Database Access | Always use `db` (hybrid adapter) via `this.db` in services |
+| Service Class | Always extend `BaseService` |
+| Route Handler | Always use middleware array, delegate to services |
+| Error Handling | Always throw custom error classes |
+| Validation | Always use Zod schemas with middleware |
+| Pagination | Always use database-level (limit/offset) |
+| Logging | Always use structured logging with context |
+| Testing | Always write tests for new services |
+| Types | Always explicit types, never `any` |
+| Offline | Always consider offline scenarios |
+
+---
+
+## Rule Improvement & Continuous Learning
+
+This section defines how these rules evolve based on emerging patterns, code reviews, and best practices discovered in the codebase.
+
+### Rule Improvement Triggers
+
+Monitor and update rules when:
+
+- **New Code Patterns**: A pattern appears in 3+ files that isn't covered by existing rules
+- **Repeated Implementations**: Similar code structures appear across multiple services/routes
+- **Common Error Patterns**: Same bugs or violations appear repeatedly in code reviews
+- **New Libraries/Tools**: New dependencies are consistently used (e.g., new validation library, caching solution)
+- **Emerging Best Practices**: Team discovers better patterns through experimentation
+- **Architecture Evolution**: Hybrid adapter patterns evolve, new sync strategies emerge
+- **Performance Issues**: Common performance anti-patterns are identified
+- **Security Concerns**: New attack vectors or security patterns are discovered
+
+### Analysis Process
+
+When analyzing code for rule improvements:
+
+1. **Pattern Detection**:
+   - Compare new code with existing rules
+   - Identify patterns that should be standardized
+   - Look for deviations from established patterns
+   - Check for consistent error handling patterns across services
+
+2. **Code Review Patterns**:
+   - Monitor repeated feedback in PR reviews
+   - Track common questions from developers
+   - Identify frequently missed checklist items
+   - Note patterns that cause confusion
+
+3. **Test Patterns**:
+   - Observe test structure consistency
+   - Identify missing test scenarios
+   - Note common mocking patterns
+   - Track test coverage gaps
+
+4. **Database Patterns**:
+   - Monitor hybrid adapter usage patterns
+   - Track offline/online handling patterns
+   - Identify sync conflict resolution strategies
+   - Note transaction usage patterns
+
+5. **Service Patterns**:
+   - Compare service method structures
+   - Identify common input/output patterns
+   - Track validation patterns
+   - Note error handling consistency
+
+### Rule Updates
+
+#### Add New Rules When:
+
+- A new technology/pattern is used in 3+ files (e.g., new caching strategy, new validation approach)
+- Common bugs could be prevented by a rule (e.g., forgetting to check `result.error`)
+- Code reviews repeatedly mention the same feedback (e.g., "missing account_id check")
+- New security or performance patterns emerge (e.g., new sync strategy, new pagination approach)
+- Architecture decisions need to be codified (e.g., new adapter pattern, new middleware pattern)
+
+#### Modify Existing Rules When:
+
+- Better examples exist in the codebase (update code examples with real implementations)
+- Additional edge cases are discovered (e.g., new offline scenarios, new error types)
+- Related rules have been updated (ensure consistency)
+- Implementation details have changed (e.g., BaseService API changes, router API changes)
+- Patterns have evolved (e.g., new sync conflict resolution, new transaction patterns)
+
+#### Example Pattern Recognition
+
+```typescript
+// If you see repeated patterns like:
+const where = [
+  { column: 'account_id', operator: '=' as const, value: accountId }
+];
+if (storeId) {
+  where.push({ column: 'store_id', operator: '=' as const, value: storeId });
+}
+
+// Consider adding to Database Patterns section:
+// - Standard where clause construction pattern
+// - Account isolation enforcement pattern
+// - Optional filter pattern
+```
+
+```typescript
+// If you see repeated error handling:
+if (result.error) {
+  throw new Error(`Failed to fetch ${resource}: ${result.error}`);
+}
+
+// Consider standardizing:
+// - Error message format
+// - Error context inclusion
+// - Error type selection (AppError subclasses)
+```
+
+```typescript
+// If you see repeated service patterns:
+export class XService extends BaseService {
+  async getX(input: GetXInput, options?: SelectOptions): Promise<X[]> {
+    const where = [{ column: 'account_id', operator: '=' as const, value: input.account_id }];
+    // ... filtering logic
+    const result = await this.db.select<X>('x_table', { ...options, where });
+    if (result.error) {
+      throw new Error(`Failed to fetch X: ${result.error}`);
+    }
+    return result.data;
+  }
+}
+
+// Consider documenting:
+// - Standard service method structure
+// - Standard input/output interfaces
+// - Standard error handling
+// - Standard pagination support
+```
+
+### Rule Quality Checks
+
+Before adding or modifying rules, ensure:
+
+- **Actionable**: Rules should be specific and enforceable (not vague like "write good code")
+- **Examples from Codebase**: Examples should come from actual implementations in `src/`
+- **Up-to-Date References**: References to files, classes, functions should match current codebase
+- **Consistent Enforcement**: Patterns should be consistently applied across the codebase
+- **Testable**: Rules should be verifiable (can be checked in code reviews or automated)
+- **Context-Aware**: Rules should consider offline-first, hybrid adapter, and sync constraints
+
+### Continuous Improvement Process
+
+1. **Monitor Code Reviews**:
+   - Track common feedback patterns
+   - Note repeated violations
+   - Identify missing rule coverage
+
+2. **Track Development Questions**:
+   - Common "how do I..." questions indicate missing documentation
+   - Repeated clarifications suggest unclear rules
+   - New patterns emerge from questions
+
+3. **Update After Major Refactors**:
+   - When BaseService changes, update service patterns
+   - When router changes, update route patterns
+   - When adapter changes, update database patterns
+
+4. **Link Related Rules**:
+   - Cross-reference related patterns (e.g., service → route → validation)
+   - Maintain consistency across rule sections
+   - Update examples when referenced code changes
+
+5. **Document Breaking Changes**:
+   - When rules change significantly, document migration path
+   - Update examples to reflect new patterns
+   - Mark deprecated patterns clearly
+
+### Rule Deprecation
+
+When deprecating rules:
+
+1. **Mark as Deprecated**: Clearly indicate deprecated patterns
+2. **Provide Migration Path**: Show how to migrate from old to new pattern
+3. **Update References**: Remove or update references to deprecated patterns
+4. **Document Reason**: Explain why pattern is deprecated (security, performance, maintainability)
+
+Example:
+```markdown
+### ⚠️ DEPRECATED: Direct Database Access in Routes
+**Reason**: Bypasses service layer, breaks offline-first architecture
+**Migration**: Move logic to service, call service from route
+**Removed**: 2025-02-XX
+```
+
+### Documentation Synchronization
+
+Keep documentation synchronized with code:
+
+- **Code Examples**: Update examples when actual implementations change
+- **File References**: Update paths when files are moved/renamed
+- **API References**: Update when BaseService, Router, or adapter APIs change
+- **Pattern Examples**: Use real code from `src/` services and routes
+- **Version Tracking**: Update "Last Updated" date when rules change
+
+### Pattern Recognition Examples
+
+#### Service Pattern Recognition
+
+If you see this pattern in multiple services:
+```typescript
+async getX(input: GetXInput, options?: SelectOptions): Promise<X[]> {
+  const where = [{ column: 'account_id', operator: '=' as const, value: input.account_id }];
+  // ... filters
+  const result = await this.db.select<X>('x_table', { ...options, where });
+  if (result.error) throw new Error(`Failed: ${result.error}`);
+  return result.data;
+}
+```
+
+**Action**: Document as standard service getter pattern in Section 5 (Service Layer Patterns)
+
+#### Route Pattern Recognition
+
+If you see this pattern in multiple routes:
+```typescript
+router.get('/api/v1/x', async (req, res) => {
+  const accountId = req.accountId!;
+  const query = querySchema.parse(req.query || {});
+  const result = await service.getX({ account_id: accountId, ...query });
+  paginatedResponse(res, result.data, result.count || 0, query.page, query.limit);
+}, [authenticate(), requireRole('owner', 'admin'), validateQuery(querySchema)]);
+```
+
+**Action**: Document as standard route pattern in Section 6 (Route Patterns)
+
+#### Error Handling Pattern Recognition
+
+If you see inconsistent error handling:
+```typescript
+// Sometimes:
+if (result.error) throw new Error(result.error);
+
+// Sometimes:
+if (result.error) throw new NotFoundError('Resource', id);
+
+// Sometimes:
+if (result.error) {
+  logger.error({ error: result.error });
+  throw new Error('Operation failed');
+}
+```
+
+**Action**: Standardize error handling pattern and add to Section 3 (Error Handling)
+
+### Rule Versioning
+
+Track rule changes:
+
+- **Version**: Increment when rules change significantly
+- **Last Updated**: Update date when rules are modified
+- **Changelog**: Document major changes (optional, in comments)
+
+---
+
+**Last Updated**: 2025-01-XX
+**Version**: 1.0.0
+**Maintainer**: Development Team
+
+---
+
+## Quick Reference: Rule Improvement Workflow
+
+1. **Detect Pattern**: Identify recurring pattern or issue (3+ occurrences)
+2. **Analyze**: Compare with existing rules, check codebase examples
+3. **Draft Rule**: Write specific, actionable rule with real examples
+4. **Quality Check**: Ensure actionable, testable, consistent
+5. **Update Examples**: Use actual code from `src/` directory
+6. **Cross-Reference**: Link to related rules, update related sections
+7. **Document**: Update version, date, changelog if needed
+8. **Enforce**: Apply in code reviews, update checklist

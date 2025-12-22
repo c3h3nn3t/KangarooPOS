@@ -261,28 +261,55 @@ export class EdgeAdapter implements DatabaseAdapter {
 
   async transaction<T>(callback: (tx: TransactionContext) => Promise<T>): Promise<T> {
     const db = this.getDb();
-    const tx: TransactionContext = {
-      insert: <U>(t: string, d: Partial<U>) => this.insert<U>(t, d),
-      update: <U>(t: string, i: string, d: Partial<U>) => this.update<U>(t, i, d),
-      delete: (t: string, i: string) => this.delete(t, i)
+
+    // Create synchronous versions of operations for use within better-sqlite3 transaction
+    const syncInsert = <U>(table: string, data: Partial<U>): MutationResult<U> => {
+      const record = { ...data } as Record<string, unknown>;
+      if (!record.id) {
+        record.id = generateId();
+      }
+      const columns = Object.keys(record);
+      const placeholders = columns.map(() => '?').join(', ');
+      const values = columns.map((col) => record[col]);
+      db.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`).run(
+        ...values
+      );
+      return { data: record as U };
     };
 
-    return new Promise((resolve, reject) => {
-      const sqliteTransaction = db.transaction(async () => {
-        try {
-          const result = await callback(tx);
-          resolve(result);
-        } catch (error) {
-          reject(error);
-        }
-      });
+    const syncUpdate = <U>(table: string, id: string, data: Partial<U>): MutationResult<U> => {
+      const updates = Object.entries(data)
+        .filter(([key]) => key !== 'id')
+        .map(([key]) => `${key} = ?`);
+      const values = Object.entries(data)
+        .filter(([key]) => key !== 'id')
+        .map(([, value]) => value);
+      db.prepare(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`).run(...values, id);
+      return { data: { id, ...data } as U };
+    };
 
-      try {
-        sqliteTransaction();
-      } catch (error) {
-        reject(error);
-      }
-    });
+    const syncDelete = (table: string, id: string): MutationResult<{ id: string }> => {
+      db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+      return { data: { id } };
+    };
+
+    // Create transaction context with sync operations wrapped as promises
+    const tx: TransactionContext = {
+      insert: <U>(t: string, d: Partial<U>) => Promise.resolve(syncInsert<U>(t, d)),
+      update: <U>(t: string, i: string, d: Partial<U>) => Promise.resolve(syncUpdate<U>(t, i, d)),
+      delete: (t: string, i: string) => Promise.resolve(syncDelete(t, i))
+    };
+
+    // Use manual transaction control since better-sqlite3's transaction() doesn't support async
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = await callback(tx);
+      db.exec('COMMIT');
+      return result;
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
   }
 
   // Initialize edge database schema

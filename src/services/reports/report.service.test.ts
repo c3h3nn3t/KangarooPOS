@@ -371,12 +371,11 @@ describe('ReportService', () => {
     ];
 
     it('should calculate employee sales summary', async () => {
-      mockDb.select
-        .mockResolvedValueOnce({ data: mockOrders, error: null })
-        .mockResolvedValueOnce({
-          data: { id: 'employee-1', name: 'John Doe' },
-          error: null
-        });
+      mockDb.select.mockResolvedValueOnce({ data: mockOrders, error: null });
+      mockDb.selectOne.mockResolvedValueOnce({
+        data: { id: 'employee-1', name: 'John Doe' },
+        error: null
+      });
 
       const result = await service.getEmployeeSales({
         account_id: accountId,
@@ -435,12 +434,11 @@ describe('ReportService', () => {
     ];
 
     it('should return shift summaries', async () => {
-      mockDb.select
-        .mockResolvedValueOnce({ data: mockShifts, error: null })
-        .mockResolvedValueOnce({
-          data: { id: 'employee-1', name: 'John Doe' },
-          error: null
-        });
+      mockDb.select.mockResolvedValueOnce({ data: mockShifts, error: null });
+      mockDb.selectOne.mockResolvedValueOnce({
+        data: { id: 'employee-1', name: 'John Doe' },
+        error: null
+      });
 
       const result = await service.getShiftSummaries({
         account_id: accountId,
@@ -644,7 +642,7 @@ describe('ReportService', () => {
       expect(result).toHaveProperty('out_of_stock_count');
       expect(result.total_items).toBe(3);
       expect(result.total_quantity).toBe(60); // 50 + 10 + 0
-      expect(result.low_stock_count).toBe(2); // inv-2 (10 <= 15), inv-3 (0 <= 10)
+      expect(result.low_stock_count).toBe(1); // inv-2 (10 <= 15); inv-3 counted as out_of_stock not low_stock
       expect(result.out_of_stock_count).toBe(1); // inv-3 (0)
     });
 

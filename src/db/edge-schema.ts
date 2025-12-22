@@ -434,6 +434,119 @@ CREATE TABLE IF NOT EXISTS composite_components (
 CREATE INDEX IF NOT EXISTS idx_composite_parent ON composite_components(parent_product_id);
 CREATE INDEX IF NOT EXISTS idx_composite_component ON composite_components(component_product_id);
 
+-- Product Stores (store-specific pricing and availability)
+CREATE TABLE IF NOT EXISTS product_stores (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id),
+  store_id TEXT NOT NULL,
+  price_cents INTEGER,
+  is_available INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT,
+  UNIQUE(product_id, store_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_stores_product ON product_stores(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_stores_store ON product_stores(store_id);
+
+-- Product Modifier Groups (links products to modifier groups)
+CREATE TABLE IF NOT EXISTS product_modifier_groups (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id),
+  modifier_group_id TEXT NOT NULL REFERENCES modifier_groups(id),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  synced_at TEXT,
+  UNIQUE(product_id, modifier_group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prod_mod_groups_product ON product_modifier_groups(product_id);
+CREATE INDEX IF NOT EXISTS idx_prod_mod_groups_group ON product_modifier_groups(modifier_group_id);
+
+-- Devices (cached for offline reference)
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  store_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  device_type TEXT NOT NULL CHECK(device_type IN ('pos', 'kds', 'customer_display', 'printer')),
+  identifier TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  is_online INTEGER NOT NULL DEFAULT 0,
+  last_seen_at TEXT,
+  settings TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_devices_store ON devices(store_id);
+
+-- Receipt Templates (for offline receipt generation)
+CREATE TABLE IF NOT EXISTS receipt_templates (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  store_id TEXT,
+  name TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  header_text TEXT,
+  footer_text TEXT,
+  show_logo INTEGER NOT NULL DEFAULT 1,
+  show_tax_breakdown INTEGER NOT NULL DEFAULT 1,
+  show_barcode INTEGER NOT NULL DEFAULT 0,
+  custom_css TEXT,
+  template_data TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_receipt_templates_store ON receipt_templates(store_id);
+
+-- Fiscal Records (for Turkey e-Fatura, EU fiscalization compliance)
+CREATE TABLE IF NOT EXISTS fiscal_records (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  store_id TEXT NOT NULL,
+  order_id TEXT NOT NULL REFERENCES orders(id),
+  fiscal_type TEXT NOT NULL CHECK(fiscal_type IN ('e_fatura', 'e_arsiv', 'tse', 'nf525', 'sii', 'saft', 'rt')),
+  fiscal_number TEXT,
+  fiscal_status TEXT NOT NULL DEFAULT 'pending' CHECK(fiscal_status IN ('pending', 'submitted', 'approved', 'rejected', 'cancelled')),
+  fiscal_data TEXT NOT NULL,
+  response_data TEXT,
+  submitted_at TEXT,
+  approved_at TEXT,
+  error_message TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_fiscal_records_order ON fiscal_records(order_id);
+CREATE INDEX IF NOT EXISTS idx_fiscal_records_status ON fiscal_records(fiscal_status);
+CREATE INDEX IF NOT EXISTS idx_fiscal_records_type ON fiscal_records(fiscal_type);
+
+-- GDPR Consent (for EU data protection compliance)
+CREATE TABLE IF NOT EXISTS gdpr_consent (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  customer_id TEXT REFERENCES customers(id),
+  consent_type TEXT NOT NULL CHECK(consent_type IN ('marketing', 'analytics', 'third_party', 'loyalty', 'retention')),
+  is_granted INTEGER NOT NULL DEFAULT 0,
+  granted_at TEXT,
+  revoked_at TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  consent_text TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_gdpr_consent_customer ON gdpr_consent(customer_id);
+CREATE INDEX IF NOT EXISTS idx_gdpr_consent_type ON gdpr_consent(consent_type);
+
 -- Stores (cached for offline reference)
 CREATE TABLE IF NOT EXISTS stores (
   id TEXT PRIMARY KEY,

@@ -14,3 +14,11 @@ export * from './inventory';
 export * from './sync';
 export * from './kds';
 export * from './reports';
+export * from './receipts';
+export * from './loyalty';
+export * from './audit';
+export * from './devices';
+export * from './fiscal';
+
+// Payment gateways
+export * from './payments/gateways';
